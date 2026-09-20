@@ -62,6 +62,9 @@ $('#runButton').onclick = async () => {
     if (sourceType === 'upload') {
       const file = $('#videoFile').files[0];
       if (!file) throw new Error('MP4 파일을 선택해주세요.');
+      const uploadStatus = await fetch('/api/blob-status').then(r => r.json());
+      if (!uploadStatus.configured) throw new Error('Vercel Blob 연결 정보가 아직 배포에 반영되지 않았습니다. Vercel에서 한 번 Redeploy해주세요.');
+      if (!uploadStatus.connected) throw new Error('대용량 업로드 전 YouTube 채널을 다시 연결해주세요. 연결 세션이 만료됐을 수 있습니다.');
       showStatus('영상을 비공개 저장소에 올리고 있습니다… 0%');
       const blob = await upload(`uploads/${Date.now()}-${file.name}`, file, {
         access: 'private', handleUploadUrl: '/api/upload', multipart: true,
