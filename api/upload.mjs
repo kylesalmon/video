@@ -1,7 +1,7 @@
 import { handleUpload } from '@vercel/blob/client';
 import { readSession } from './_youtube-session.mjs';
 
-export default async function handler(request) {
+export default async function handler(request, response) {
   try {
     const body = await request.json();
     const json = await handleUpload({
@@ -13,8 +13,8 @@ export default async function handler(request) {
         return { allowedContentTypes: ['video/mp4'], addRandomSuffix: true };
       },
     });
-    return Response.json(json);
+    return response.status(200).json(json);
   } catch (error) {
-    return Response.json({ error: error.message || '업로드 권한을 만들지 못했습니다.' }, { status: 400 });
+    return response.status(400).json({ error: error.message || '업로드 권한을 만들지 못했습니다.' });
   }
 }
