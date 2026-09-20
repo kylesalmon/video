@@ -47,7 +47,13 @@ $('#runButton').onclick = async () => {
       showStatus('링크의 영상을 준비하고 있습니다…');
       response = await fetch('/api/youtube', { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ url, instruction, duration }) });
     }
-    const data = await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    const raw = await response.text();
+    let data;
+    try { data = JSON.parse(raw); }
+    catch {
+      throw new Error(`서버가 API 응답 대신 웹 페이지를 반환했습니다. 배포 설정을 확인해주세요. (${response.status})`);
+    }
     if (!response.ok) throw new Error(data.error || '영상을 만들지 못했습니다.');
     showStatus('완성됐습니다. 아래에서 결과를 내려받을 수 있어요.');
     $('#result').innerHTML = `<strong>편집 완료</strong><br>${data.summary}<br><a href="${data.downloadUrl}" download>완성된 MP4 다운로드 →</a>`;
