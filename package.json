@@ -4,7 +4,7 @@
   "description": "원본 MP4에서 AI가 요청에 맞는 대화 구간을 고르고, 새 MP4로 이어 붙이는 로컬 웹앱입니다.",
   "main": "server.mjs",
   "scripts": {
-    "start": "node server.mjs"
+    "dev": "node server.mjs"
   },
   "repository": {
     "type": "git",

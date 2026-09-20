@@ -1,0 +1,4 @@
+# This is only the local development server. Vercel serves static files and /api functions.
+server.mjs
+.work
+outputs

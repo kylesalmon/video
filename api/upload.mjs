@@ -12,7 +12,6 @@ export default async function handler(request) {
         if (!pathname.startsWith('uploads/') || !pathname.toLowerCase().endsWith('.mp4')) throw new Error('MP4 파일만 업로드할 수 있습니다.');
         return { allowedContentTypes: ['video/mp4'], addRandomSuffix: true };
       },
-      onUploadCompleted: async ({ blob }) => console.log(`Video upload completed: ${blob.pathname}`),
     });
     return Response.json(json);
   } catch (error) {
