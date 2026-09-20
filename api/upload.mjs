@@ -3,7 +3,9 @@ import { readSession } from './_youtube-session.mjs';
 
 export default async function handler(request, response) {
   try {
-    const body = await request.json();
+    // Vercel's Node runtime parses JSON request bodies before this handler runs.
+    const body = typeof request.body === 'string' ? JSON.parse(request.body) : request.body;
+    if (!body) throw new Error('업로드 권한 요청 본문이 비어 있습니다.');
     const json = await handleUpload({
       body,
       request,
