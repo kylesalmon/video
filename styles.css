@@ -14,10 +14,12 @@ h1 em { font-style:normal; color:#678000; }
 .tab.active { background:var(--ink); color:white; }
 label { display:block; font-size:13px; font-weight:700; margin:19px 0 9px; }
 input, textarea { width:100%; font:14px Manrope; color:var(--ink); border:1px solid var(--line); border-radius:9px; padding:13px; background:#fff; outline-color:#9abc00; }
+select { width:100%; font:14px Manrope; color:var(--ink); border:1px solid var(--line); border-radius:9px; padding:13px; background:#fff; }
 textarea { resize:vertical; line-height:1.55; }
 .hint, small { color:var(--muted); font-size:11px; margin:8px 0 0; }.hidden { display:none!important; }
 .dropzone { height:145px; border:1px dashed #a6a59d; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:5px; cursor:pointer; margin:0; }.dropzone input { display:none; }.dropzone .plus { font-size:27px; line-height:1; color:#708b00; }.dropzone strong { font-size:14px; }
 .duration-row { display:flex; align-items:end; justify-content:space-between; gap:24px; margin-top:22px; }.duration-row label { margin:0 0 8px; }.duration-row div { position:relative; width:115px; }.duration-row input { padding-right:30px; }.duration-row span:not(.run span) { position:absolute; right:10px; bottom:13px; font-size:12px; color:var(--muted); }
 .run { border:0; border-radius:10px; background:var(--lime); padding:15px 18px; font:800 14px Manrope; cursor:pointer; white-space:nowrap; }.run:disabled { opacity:.55; cursor:wait; }.run span { font-size:20px; margin-left:8px; }
+.connect { display:inline-block; margin-top:12px; border-radius:9px; background:var(--ink); padding:12px 15px; color:white; text-decoration:none; font-size:13px; font-weight:800; }
 .status,.result { margin-top:22px; padding:18px 20px; border-radius:12px; background:#edeee8; font-size:14px; line-height:1.65; }.status.error { background:#ffebe8; color:#8c2b20; }.result { background:#e7f5c6; }.result a { color:#304b00; font-weight:800; }
 @media (max-width:520px) { .shell{width:min(100% - 28px,760px);padding-top:50px}.editor{padding:18px}.duration-row{align-items:stretch;flex-direction:column}.duration-row div{width:100%}.run{width:100%} }

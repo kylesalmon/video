@@ -21,9 +21,16 @@
         </div>
 
         <div id="youtubePanel" class="source-panel">
-          <label for="youtubeUrl">YouTube 영상 주소</label>
-          <input id="youtubeUrl" type="url" placeholder="https://www.youtube.com/watch?v=..." />
-          <p class="hint">본인이 사용 권한을 가진 영상만 입력하세요.</p>
+          <label>내 YouTube 영상</label>
+          <div id="youtubeConnect">
+            <p class="hint">내 채널을 연결하면 업로드한 영상과 편집 권한이 있는 자막을 확인할 수 있습니다.</p>
+            <a class="connect" href="/api/youtube-auth?action=begin">YouTube 채널 연결</a>
+          </div>
+          <div id="youtubeLibrary" class="hidden">
+            <select id="youtubeVideo"><option value="">영상을 불러오는 중…</option></select>
+            <p id="captionStatus" class="hint"></p>
+          </div>
+          <p class="hint">원본 파일은 YouTube Studio에서 내려받아 MP4로 올린 뒤 편집합니다.</p>
         </div>
         <div id="uploadPanel" class="source-panel hidden">
           <label class="dropzone" for="videoFile">

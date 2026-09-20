@@ -28,4 +28,19 @@ node server.mjs
 
 ## YouTube 링크
 
-YouTube 링크의 영상 데이터를 임의로 내려받는 기능은 넣지 않았습니다. 링크 영상에 대한 이용 권한과 플랫폼 약관 확인이 필요하기 때문입니다. 현재는 본인이 소유하거나 사용 허가받은 원본을 MP4로 올려 처리하세요. 향후 YouTube Data API와 OAuth로 본인 채널의 자막·메타데이터를 가져오는 연결은 추가할 수 있습니다.
+내 채널의 영상과 자막을 확인하려면 Google Cloud Console에서 **YouTube Data API v3**를 활성화하고 웹 OAuth 클라이언트를 만드세요. Vercel 환경변수에 아래 값을 추가합니다.
+
+```text
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+YOUTUBE_SESSION_SECRET=길고_무작위인_문자열
+APP_ORIGIN=https://내-도메인
+```
+
+OAuth 클라이언트의 승인된 리디렉션 URI에는 정확히 아래 주소를 등록합니다.
+
+```text
+https://내-도메인/api/youtube-auth?action=callback
+```
+
+YouTube Data API는 편집 권한이 있는 영상의 자막을 확인하는 데 사용합니다. YouTube 영상 파일을 임의로 내려받지는 않습니다. 원본은 YouTube Studio에서 내려받아 MP4로 올려 처리하세요.
