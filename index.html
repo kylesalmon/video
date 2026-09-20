@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clipnote — AI 영상 편집</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">AI VIDEO EDITOR</p>
+        <h1>설명 한 줄로<br /><em>필요한 영상만</em> 남기세요.</h1>
+        <p class="intro">원본을 읽고, 자막과 화면을 분석해 원하는 길이의 새 MP4를 만듭니다.</p>
+      </header>
+
+      <section class="editor" aria-label="영상 생성 설정">
+        <div class="source-tabs" role="tablist">
+          <button class="tab active" id="youtubeTab" type="button">YouTube 링크</button>
+          <button class="tab" id="uploadTab" type="button">MP4 올리기</button>
+        </div>
+
+        <div id="youtubePanel" class="source-panel">
+          <label for="youtubeUrl">YouTube 영상 주소</label>
+          <input id="youtubeUrl" type="url" placeholder="https://www.youtube.com/watch?v=..." />
+          <p class="hint">본인이 사용 권한을 가진 영상만 입력하세요.</p>
+        </div>
+        <div id="uploadPanel" class="source-panel hidden">
+          <label class="dropzone" for="videoFile">
+            <input id="videoFile" type="file" accept="video/mp4,.mp4" />
+            <span class="plus">+</span>
+            <strong>MP4 파일 선택</strong>
+            <small id="fileName">최대 1GB · 파일은 처리 후 삭제됩니다</small>
+          </label>
+        </div>
+
+        <label for="instruction">어떤 영상으로 만들까요?</label>
+        <textarea id="instruction" rows="4" placeholder="예: 창업자가 제품의 핵심 가치를 설명하는 부분을 자연스럽게 이어서, 신뢰감 있는 3분 소개 영상으로 만들어줘."></textarea>
+
+        <div class="duration-row">
+          <div>
+            <label for="duration">목표 길이</label>
+            <input id="duration" type="number" min="15" max="3600" value="180" />
+            <span>초</span>
+          </div>
+          <button id="runButton" class="run" type="button">AI로 영상 만들기 <span>→</span></button>
+        </div>
+      </section>
+
+      <section id="status" class="status hidden" aria-live="polite"></section>
+      <section id="result" class="result hidden"></section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
