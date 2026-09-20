@@ -70,8 +70,8 @@ $('#runButton').onclick = async () => {
         access: 'private', handleUploadUrl: '/api/upload', multipart: true,
         onUploadProgress: ({ percentage }) => showStatus(`영상을 비공개 저장소에 올리고 있습니다… ${Math.round(percentage)}%`)
       });
-      showStatus('원본 영상 업로드를 완료했습니다. 다음 단계인 영상 처리 서버 연결 후 이 파일로 편집을 시작할 수 있습니다.');
-      $('#result').innerHTML = `<strong>원본 저장 완료</strong><br>${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)가 비공개 영상 저장소에 업로드됐습니다.`;
+      showStatus('AI가 자막을 만들고 편집 구간을 고르고 있습니다… 영상 길이에 따라 몇 분 걸릴 수 있어요.');
+      response = await fetch('/api/create', { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({sourceUrl:blob.url, instruction, duration}) });
       $('#result').classList.remove('hidden');
       return;
     } else {
@@ -87,7 +87,8 @@ $('#runButton').onclick = async () => {
     }
     if (!response.ok) throw new Error(data.error || '영상을 만들지 못했습니다.');
     showStatus('완성됐습니다. 아래에서 결과를 내려받을 수 있어요.');
-    $('#result').innerHTML = `<strong>편집 완료</strong><br>${data.summary}<br><a href="${data.downloadUrl}" download>완성된 MP4 다운로드 →</a>`;
+    const downloadUrl = data.resultUrl ? `/api/result?url=${encodeURIComponent(data.resultUrl)}` : data.downloadUrl;
+    $('#result').innerHTML = `<strong>편집 완료</strong><br>${data.summary || 'AI가 선택한 구간을 편집했습니다.'}<br><a href="${downloadUrl}" download>완성된 MP4 다운로드 →</a>`;
     $('#result').classList.remove('hidden');
   } catch (error) { showStatus(error.message, true); }
   finally { button.disabled = false; }
