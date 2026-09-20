@@ -1,0 +1,7 @@
+{
+  "name": "clipnote-video-worker",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.mjs" },
+  "dependencies": { "@vercel/blob": "^2.8.0" }
+}
