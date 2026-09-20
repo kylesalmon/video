@@ -32,7 +32,12 @@ async function loadYoutubeLibrary() {
     $('#captionStatus').textContent = captions.available ? '자막을 확인했습니다. 원본 MP4를 올려 편집을 계속하세요.' : '사용 가능한 자막이 없습니다. 원본 MP4는 편집할 수 있습니다.';
   };
 }
-if (new URLSearchParams(location.search).get('youtube') === 'connected') loadYoutubeLibrary();
+const pageParams = new URLSearchParams(location.search);
+if (pageParams.get('youtube') === 'connected') loadYoutubeLibrary();
+if (pageParams.get('youtube') === 'error') {
+  showStatus(pageParams.get('message') || 'YouTube 채널을 연결하지 못했습니다.', true);
+  history.replaceState({}, '', location.pathname);
+}
 
 function showStatus(message, error = false) {
   const box = $('#status');
