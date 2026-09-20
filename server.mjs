@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+const staticRoot = path.join(root, 'public');
 const work = path.join(root, '.work');
 const output = path.join(root, 'outputs');
 await mkdir(work, { recursive: true }); await mkdir(output, { recursive: true });
@@ -61,7 +62,7 @@ async function makeVideo(source, instruction, duration) {
 http.createServer(async (req,res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
-    if (req.method === 'GET' && staticFiles[url.pathname]) { const [file,type] = staticFiles[url.pathname]; res.writeHead(200,{'content-type':type}); return res.end(await readFile(path.join(root,file))); }
+    if (req.method === 'GET' && staticFiles[url.pathname]) { const [file,type] = staticFiles[url.pathname]; res.writeHead(200,{'content-type':type}); return res.end(await readFile(path.join(staticRoot,file))); }
     if (req.method === 'GET' && url.pathname.startsWith('/outputs/')) { const file=path.basename(url.pathname); res.writeHead(200,{'content-type':'video/mp4','content-disposition':`attachment; filename="edited-${file}"`}); return createReadStream(path.join(output,file)).pipe(res); }
     if (req.method === 'POST' && url.pathname === '/api/create') { const instruction=url.searchParams.get('instruction')?.trim(), duration=Number(url.searchParams.get('duration')); if(!instruction || !duration) return send(res,400,{error:'설명과 목표 길이가 필요합니다.'}); const name=decodeURIComponent(req.headers['x-file-name'] || 'upload.mp4'); if(!name.toLowerCase().endsWith('.mp4')) return send(res,400,{error:'MP4 파일만 올릴 수 있습니다.'}); const source=path.join(work,`${randomUUID()}.mp4`); await writeFile(source,await body(req)); const made=await makeVideo(source,instruction,duration); return send(res,200,{summary:made.summary,downloadUrl:`/outputs/${made.id}.mp4`,clips:made.clips}); }
     if (req.method === 'POST' && url.pathname === '/api/youtube') return send(res,501,{error:'YouTube 링크는 권한 확인을 위해 기본값으로 비활성화되어 있습니다. 직접 소유하거나 사용 권한이 있는 영상을 MP4로 올려주세요.'});
