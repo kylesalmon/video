@@ -1,10 +1,11 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-const cookie = (request, name) => (request.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith(`${name}=`))?.slice(name.length + 1);
+const header = (request, name) => request.headers.get?.(name) || request.headers[name];
+const cookie = (request, name) => (header(request, 'cookie') || '').split(';').map(v => v.trim()).find(v => v.startsWith(`${name}=`))?.slice(name.length + 1);
 const signature = (value) => createHmac('sha256', process.env.YOUTUBE_SESSION_SECRET || '').update(value).digest('base64url');
 
 export function origin(request) {
-  return process.env.APP_ORIGIN || `${request.headers['x-forwarded-proto'] || 'https'}://${request.headers.host}`;
+  return process.env.APP_ORIGIN || `${header(request, 'x-forwarded-proto') || 'https'}://${header(request, 'host')}`;
 }
 export function readSession(request) {
   const signed = cookie(request, 'yt_session'); if (!signed || !process.env.YOUTUBE_SESSION_SECRET) return null;

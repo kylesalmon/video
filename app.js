@@ -1,3 +1,5 @@
+import { upload } from 'https://esm.sh/@vercel/blob@2.8.0/client';
+
 const $ = (selector) => document.querySelector(selector);
 let sourceType = 'youtube';
 let selectedYoutubeVideo = null;
@@ -14,7 +16,7 @@ $('#youtubeTab').onclick = () => switchSource('youtube');
 $('#uploadTab').onclick = () => switchSource('upload');
 $('#videoFile').onchange = (event) => {
   const file = event.target.files[0];
-  $('#fileName').textContent = file ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB` : '최대 1GB · 파일은 처리 후 삭제됩니다';
+  $('#fileName').textContent = file ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB` : '대용량 MP4 지원 · 비공개 저장소에 안전하게 보관됩니다';
 };
 
 async function loadYoutubeLibrary() {
@@ -60,10 +62,15 @@ $('#runButton').onclick = async () => {
     if (sourceType === 'upload') {
       const file = $('#videoFile').files[0];
       if (!file) throw new Error('MP4 파일을 선택해주세요.');
-      showStatus('영상을 올리고 있습니다…');
-      response = await fetch(`/api/create?instruction=${encodeURIComponent(instruction)}&duration=${duration}`, {
-        method: 'POST', headers: { 'content-type': 'application/octet-stream', 'x-file-name': encodeURIComponent(file.name) }, body: file
+      showStatus('영상을 비공개 저장소에 올리고 있습니다… 0%');
+      const blob = await upload(`uploads/${Date.now()}-${file.name}`, file, {
+        access: 'private', handleUploadUrl: '/api/upload', multipart: true,
+        onUploadProgress: ({ percentage }) => showStatus(`영상을 비공개 저장소에 올리고 있습니다… ${Math.round(percentage)}%`)
       });
+      showStatus('원본 영상 업로드를 완료했습니다. 다음 단계인 영상 처리 서버 연결 후 이 파일로 편집을 시작할 수 있습니다.');
+      $('#result').innerHTML = `<strong>원본 저장 완료</strong><br>${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)가 비공개 영상 저장소에 업로드됐습니다.`;
+      $('#result').classList.remove('hidden');
+      return;
     } else {
       if (!selectedYoutubeVideo) throw new Error('먼저 내 YouTube 채널을 연결하고 영상을 선택해주세요.');
       throw new Error('선택한 영상의 원본 MP4를 올리기 탭에서 업로드해주세요. YouTube 자막 분석은 완료됐지만 영상 파일은 공식 API로 내려받을 수 없습니다.');

@@ -26,6 +26,10 @@ node server.mjs
 
 처리 파일은 `.work`에 잠시 저장되고 완료 뒤 삭제됩니다. 결과는 `outputs`에 저장됩니다.
 
+## Vercel 대용량 업로드
+
+Vercel 함수는 4.5MB까지만 직접 받을 수 있어 대용량 MP4는 Vercel Blob으로 브라우저에서 직접 전송합니다. Vercel 프로젝트의 **Storage → Blob**에서 비공개 Blob 저장소를 연결하세요. 연결하면 `BLOB_READ_WRITE_TOKEN`이 자동으로 환경변수에 추가됩니다. 업로드는 연결된 YouTube 채널 세션이 있는 사용자만 허용됩니다.
+
 ## YouTube 링크
 
 내 채널의 영상과 자막을 확인하려면 Google Cloud Console에서 **YouTube Data API v3**를 활성화하고 웹 OAuth 클라이언트를 만드세요. Vercel 환경변수에 아래 값을 추가합니다.
