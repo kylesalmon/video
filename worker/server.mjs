@@ -10,7 +10,7 @@ const json = (res, status, body) => { res.writeHead(status, {'content-type':'app
 const run = (args) => new Promise((resolve,reject) => { const p=spawn('ffmpeg',args); let err=''; p.stderr.on('data',d=>err+=d); p.on('close',c=>c===0?resolve():reject(new Error(err.slice(-800)))); });
 const body = (req) => new Promise((resolve,reject) => { let chunks=[]; req.on('data',c=>chunks.push(c)); req.on('end',()=>resolve(JSON.parse(Buffer.concat(chunks)))); req.on('error',reject); });
 
-http.createServer(async (req,res) => {
+const server = http.createServer(async (req,res) => {
   if (req.method === 'GET' && req.url === '/health') return json(res,200,{ok:true});
   if (req.method !== 'POST' || req.url !== '/jobs') return json(res,404,{error:'Not found'});
   if (req.headers.authorization !== `Bearer ${process.env.WORKER_API_SECRET}`) return json(res,401,{error:'Unauthorized'});
@@ -32,4 +32,11 @@ http.createServer(async (req,res) => {
     const uploaded=await put(`results/${id}.mp4`,await readFile(output),{access:'private',contentType:'video/mp4',token:process.env.BLOB_READ_WRITE_TOKEN});
     json(res,200,{resultUrl:uploaded.url,clips});
   } catch (e) { json(res,500,{error:e.message}); } finally { await rm(input,{force:true}); await rm(audio,{force:true}); }
-}).listen(process.env.PORT||8080);
+});
+
+const port = Number(process.env.PORT || 8080);
+server.listen(port, '0.0.0.0', () => console.log(`Video worker listening on ${port}`));
+server.on('error', (error) => {
+  console.error('Video worker could not start:', error);
+  process.exitCode = 1;
+});
