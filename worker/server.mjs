@@ -1,5 +1,8 @@
 import http from 'node:http';
-import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { finished } from 'node:stream/promises';
+import { Readable } from 'node:stream';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
@@ -19,7 +22,8 @@ const server = http.createServer(async (req,res) => {
     const { sourceUrl, instruction, duration } = await body(req);
     if (!sourceUrl || !instruction || !duration) throw new Error('sourceUrl, instruction, duration are required');
     const source = await fetch(sourceUrl,{headers:{Authorization:`Bearer ${process.env.WORKER_API_SECRET}`}});
-    if (!source.ok) throw new Error('Could not read source video'); await writeFile(input,Buffer.from(await source.arrayBuffer()));
+    if (!source.ok || !source.body) throw new Error('Could not read source video');
+    await finished(Readable.fromWeb(source.body).pipe(createWriteStream(input)));
     await run(['-y','-i',input,'-vn','-ac','1','-ar','16000',audio]);
     const form=new FormData(); form.append('file',new Blob([await readFile(audio)],{type:'audio/mpeg'}),'audio.mp3'); form.append('model','whisper-1'); form.append('response_format','verbose_json'); form.append('timestamp_granularities[]','segment');
     const transcript=await fetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`},body:form}).then(r=>r.json());
