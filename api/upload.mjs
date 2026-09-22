@@ -9,6 +9,7 @@ export default async function handler(request, response) {
     const json = await handleUpload({
       body,
       request,
+      token: process.env.test_READ_WRITE_TOKEN,
       onBeforeGenerateToken: async (pathname) => {
         if (!readSession(request)) throw new Error('대용량 업로드 전 YouTube 채널 연결이 필요합니다.');
         if (!pathname.startsWith('uploads/') || !pathname.toLowerCase().endsWith('.mp4')) throw new Error('MP4 파일만 업로드할 수 있습니다.');
