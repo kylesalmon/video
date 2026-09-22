@@ -67,7 +67,7 @@ $('#runButton').onclick = async () => {
       if (!uploadStatus.connected) throw new Error('대용량 업로드 전 YouTube 채널을 다시 연결해주세요. 연결 세션이 만료됐을 수 있습니다.');
       showStatus('영상을 비공개 저장소에 올리고 있습니다… 0%');
       const blob = await upload(`uploads/${Date.now()}-${file.name}`, file, {
-        access: 'private', handleUploadUrl: '/api/upload', multipart: true,
+        access: 'public', handleUploadUrl: '/api/upload', multipart: true,
         onUploadProgress: ({ percentage }) => showStatus(`영상을 비공개 저장소에 올리고 있습니다… ${Math.round(percentage)}%`)
       });
       showStatus('AI가 자막을 만들고 편집 구간을 고르고 있습니다… 영상 길이에 따라 몇 분 걸릴 수 있어요.');

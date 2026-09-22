@@ -5,9 +5,8 @@ export default async function handler(request, response) {
   if (!process.env.VIDEO_WORKER_URL || !process.env.WORKER_API_SECRET) return response.status(503).json({ error:'영상 처리 서버 연결 정보가 없습니다.' });
   try {
     const body = typeof request.body === 'string' ? JSON.parse(request.body) : request.body;
-    const sourceProxyUrl = `https://${request.headers.host}/api/worker-source?url=${encodeURIComponent(body.sourceUrl)}`;
     const worker = await fetch(`${process.env.VIDEO_WORKER_URL.replace(/\/$/, '')}/jobs`, {
-      method:'POST', headers:{'content-type':'application/json', Authorization:`Bearer ${process.env.WORKER_API_SECRET}`}, body:JSON.stringify({ ...body, sourceUrl:sourceProxyUrl })
+      method:'POST', headers:{'content-type':'application/json', Authorization:`Bearer ${process.env.WORKER_API_SECRET}`}, body:JSON.stringify(body)
     });
     const result = await worker.json();
     return response.status(worker.status).json(result);
