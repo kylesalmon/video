@@ -72,8 +72,6 @@ $('#runButton').onclick = async () => {
       });
       showStatus('AI가 자막을 만들고 편집 구간을 고르고 있습니다… 영상 길이에 따라 몇 분 걸릴 수 있어요.');
       response = await fetch('/api/create', { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({sourceUrl:blob.url, instruction, duration}) });
-      $('#result').classList.remove('hidden');
-      return;
     } else {
       if (!selectedYoutubeVideo) throw new Error('먼저 내 YouTube 채널을 연결하고 영상을 선택해주세요.');
       throw new Error('선택한 영상의 원본 MP4를 올리기 탭에서 업로드해주세요. YouTube 자막 분석은 완료됐지만 영상 파일은 공식 API로 내려받을 수 없습니다.');
