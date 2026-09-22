@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm, readdir } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { finished } from 'node:stream/promises';
 import { Readable } from 'node:stream';
@@ -31,12 +31,19 @@ const server = http.createServer(async (req,res) => {
     if (!source.ok || !source.body) throw new Error('Could not read source video');
     await finished(Readable.fromWeb(source.body).pipe(createWriteStream(input)));
     await run(['-y','-i',input,'-vn','-ac','1','-ar','16000','-codec:a','libmp3lame','-b:a','16k',audio]);
-    const form=new FormData(); form.append('file',new Blob([await readFile(audio)],{type:'audio/mpeg'}),'audio.mp3'); form.append('model','whisper-1'); form.append('response_format','verbose_json'); form.append('timestamp_granularities[]','segment');
-    const transcriptionResponse=await fetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`},body:form});
-    const transcript=await transcriptionResponse.json();
-    if (!transcriptionResponse.ok) throw new Error(`OpenAI transcription: ${transcript.error?.message || transcriptionResponse.status}`);
-    if (!transcript.segments?.length) throw new Error('OpenAI transcription returned no speech segments');
-    const planPrompt=`Pick chronological transcript segments totaling about ${duration} seconds for: ${instruction}. Return only JSON {"clips":[{"start":number,"end":number}]}. Segments: ${JSON.stringify(transcript.segments)}`;
+    const chunkPattern=path.join(temp,`${id}-chunk-%03d.mp3`);
+    await run(['-y','-i',audio,'-f','segment','-segment_time','900','-c','copy',chunkPattern]);
+    const chunks=(await readdir(temp)).filter(name=>name.startsWith(`${id}-chunk-`) && name.endsWith('.mp3')).sort();
+    const segments=[];
+    for (let index=0;index<chunks.length;index++) {
+      const form=new FormData(); form.append('file',new Blob([await readFile(path.join(temp,chunks[index]))],{type:'audio/mpeg'}),chunks[index]); form.append('model','whisper-1'); form.append('response_format','verbose_json'); form.append('timestamp_granularities[]','segment');
+      const transcriptionResponse=await fetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`},body:form});
+      const transcript=await transcriptionResponse.json();
+      if (!transcriptionResponse.ok) throw new Error(`OpenAI transcription: ${transcript.error?.message || transcriptionResponse.status}`);
+      segments.push(...(transcript.segments||[]).map(segment=>({...segment,start:segment.start+index*900,end:segment.end+index*900})));
+    }
+    if (!segments.length) throw new Error('OpenAI transcription returned no speech segments');
+    const planPrompt=`Pick chronological transcript segments totaling about ${duration} seconds for: ${instruction}. Return only JSON {"clips":[{"start":number,"end":number}]}. Segments: ${JSON.stringify(segments)}`;
     const planningResponse=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'content-type':'application/json'},body:JSON.stringify({model:'gpt-4.1-mini',input:planPrompt})});
     const planResponse=await planningResponse.json();
     if (!planningResponse.ok) throw new Error(`OpenAI edit planning: ${planResponse.error?.message || planningResponse.status}`);
