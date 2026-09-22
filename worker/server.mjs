@@ -40,7 +40,7 @@ const server = http.createServer(async (req,res) => {
     const planningResponse=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'content-type':'application/json'},body:JSON.stringify({model:'gpt-4.1-mini',input:planPrompt})});
     const planResponse=await planningResponse.json();
     if (!planningResponse.ok) throw new Error(`OpenAI edit planning: ${planResponse.error?.message || planningResponse.status}`);
-    const planText=planResponse.output_text;
+    const planText=planResponse.output_text || planResponse.output?.flatMap(item=>item.content||[]).find(item=>item.type==='output_text')?.text;
     if (!planText) throw new Error('OpenAI edit planning returned no text output');
     const plan=JSON.parse(planText.replace(/^```(?:json)?\s*|\s*```$/g,'')); const clips=plan.clips.filter(c=>c.end>c.start).slice(0,30); if(!clips.length) throw new Error('No edit clips selected');
     const output=path.join(temp,`${id}-edited.mp4`); const filters=clips.flatMap((c,i)=>[`[0:v]trim=start=${c.start}:end=${c.end},setpts=PTS-STARTPTS[v${i}]`,`[0:a]atrim=start=${c.start}:end=${c.end},asetpts=PTS-STARTPTS[a${i}]`]); filters.push(`${clips.map((_,i)=>`[v${i}][a${i}]`).join('')}concat=n=${clips.length}:v=1:a=1[v][a]`);
