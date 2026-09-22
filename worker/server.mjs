@@ -18,8 +18,8 @@ const server = http.createServer(async (req,res) => {
   try {
     const { sourceUrl, instruction, duration } = await body(req);
     if (!sourceUrl || !instruction || !duration) throw new Error('sourceUrl, instruction, duration are required');
-    const source = await fetch(sourceUrl,{headers:{Authorization:`Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`}});
-    if (!source.ok) throw new Error('Could not read private source video'); await writeFile(input,Buffer.from(await source.arrayBuffer()));
+    const source = await fetch(sourceUrl,{headers:{Authorization:`Bearer ${process.env.WORKER_API_SECRET}`}});
+    if (!source.ok) throw new Error('Could not read source video'); await writeFile(input,Buffer.from(await source.arrayBuffer()));
     await run(['-y','-i',input,'-vn','-ac','1','-ar','16000',audio]);
     const form=new FormData(); form.append('file',new Blob([await readFile(audio)],{type:'audio/mpeg'}),'audio.mp3'); form.append('model','whisper-1'); form.append('response_format','verbose_json'); form.append('timestamp_granularities[]','segment');
     const transcript=await fetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`},body:form}).then(r=>r.json());
