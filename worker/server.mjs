@@ -31,7 +31,7 @@ const server = http.createServer(async (req,res) => {
     await run(['-y','-i',input,'-filter_complex',filters.join(';'),'-map','[v]','-map','[a]',output]);
     const uploaded=await put(`results/${id}.mp4`,await readFile(output),{access:'private',contentType:'video/mp4',token:process.env.BLOB_READ_WRITE_TOKEN});
     json(res,200,{resultUrl:uploaded.url,clips});
-  } catch (e) { json(res,500,{error:e.message}); } finally { await rm(input,{force:true}); await rm(audio,{force:true}); }
+  } catch (e) { console.error('Video job failed:', e); json(res,500,{error:e.message}); } finally { await rm(input,{force:true}); await rm(audio,{force:true}); }
 });
 
 const port = Number(process.env.PORT || 8080);
