@@ -9,12 +9,17 @@ import path from 'node:path';
 
 const temp = '/tmp/clipnote'; await mkdir(temp, { recursive:true });
 const results = new Map();
+const jobs = new Map();
 const json = (res, status, body) => { res.writeHead(status, {'content-type':'application/json'}); res.end(JSON.stringify(body)); };
 const run = (args) => new Promise((resolve,reject) => { const p=spawn('ffmpeg',args); let err=''; p.stderr.on('data',d=>err+=d); p.on('close',c=>c===0?resolve():reject(new Error(err.slice(-800)))); });
 const body = (req) => new Promise((resolve,reject) => { let chunks=[]; req.on('data',c=>chunks.push(c)); req.on('end',()=>resolve(JSON.parse(Buffer.concat(chunks)))); req.on('error',reject); });
 
 const server = http.createServer(async (req,res) => {
   if (req.method === 'GET' && req.url === '/health') return json(res,200,{ok:true});
+  if (req.method === 'GET' && req.url.startsWith('/jobs/')) {
+    const job=jobs.get(decodeURIComponent(req.url.slice('/jobs/'.length)));
+    return json(res,job?200:404,job||{error:'Job not found'});
+  }
   if (req.method === 'GET' && req.url.startsWith('/results/')) {
     const id=decodeURIComponent(req.url.slice('/results/'.length)); const output=results.get(id);
     if (!output) return json(res,404,{error:'Result not found'});
@@ -23,9 +28,10 @@ const server = http.createServer(async (req,res) => {
   }
   if (req.method !== 'POST' || req.url !== '/jobs') return json(res,404,{error:'Not found'});
   if (req.headers.authorization !== `Bearer ${process.env.WORKER_API_SECRET}`) return json(res,401,{error:'Unauthorized'});
-  const id=randomUUID(); const input=path.join(temp,`${id}.mp4`); const audio=path.join(temp,`${id}.mp3`);
+  const id=randomUUID(); const payload=await body(req); jobs.set(id,{status:'processing'}); json(res,202,{jobId:id});
+  const input=path.join(temp,`${id}.mp4`); const audio=path.join(temp,`${id}.mp3`);
   try {
-    const { sourceUrl, instruction, duration } = await body(req);
+    const { sourceUrl, instruction, duration } = payload;
     if (!sourceUrl || !instruction || !duration) throw new Error('sourceUrl, instruction, duration are required');
     const source = await fetch(sourceUrl);
     if (!source.ok || !source.body) throw new Error('Could not read source video');
@@ -55,8 +61,8 @@ const server = http.createServer(async (req,res) => {
     results.set(id,output);
     setTimeout(async()=>{if(results.get(id)===output){results.delete(id);await rm(output,{force:true});}},60*60*1000).unref();
     const protocol=req.headers['x-forwarded-proto']||'https';
-    json(res,200,{resultUrl:`${protocol}://${req.headers.host}/results/${id}`,clips});
-  } catch (e) { console.error('Video job failed:', e); json(res,500,{error:e.message}); } finally { await rm(input,{force:true}); await rm(audio,{force:true}); }
+    jobs.set(id,{status:'complete',resultUrl:`${protocol}://${req.headers.host}/results/${id}`,clips});
+  } catch (e) { console.error('Video job failed:', e); jobs.set(id,{status:'failed',error:e.message}); } finally { await rm(input,{force:true}); await rm(audio,{force:true}); }
 });
 
 const port = Number(process.env.PORT || 8080);

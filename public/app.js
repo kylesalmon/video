@@ -84,6 +84,15 @@ $('#runButton').onclick = async () => {
       throw new Error(`서버가 API 응답 대신 웹 페이지를 반환했습니다. 배포 설정을 확인해주세요. (${response.status})`);
     }
     if (!response.ok) throw new Error(data.error || '영상을 만들지 못했습니다.');
+    if (data.jobId) {
+      showStatus('영상 처리 중입니다. 긴 영상은 탭을 열어두세요.');
+      while (true) {
+        await new Promise(resolve => setTimeout(resolve, 10000));
+        const job = await fetch(`/api/job?id=${encodeURIComponent(data.jobId)}`).then(r => r.json());
+        if (job.status === 'failed') throw new Error(job.error || '영상 처리가 실패했습니다.');
+        if (job.status === 'complete') { data = job; break; }
+      }
+    }
     showStatus('완성됐습니다. 아래에서 결과를 내려받을 수 있어요.');
     const downloadUrl = data.resultUrl || data.downloadUrl;
     $('#result').innerHTML = `<strong>편집 완료</strong><br>${data.summary || 'AI가 선택한 구간을 편집했습니다.'}<br><a href="${downloadUrl}" download>완성된 MP4 다운로드 →</a>`;
