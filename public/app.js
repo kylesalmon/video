@@ -95,6 +95,7 @@ $('#runButton').onclick = async () => {
     }
     showStatus('완성됐습니다. 아래에서 결과를 내려받을 수 있어요.');
     const downloadUrl = data.resultUrl || data.downloadUrl;
+    if (!downloadUrl) throw new Error('완성 영상의 다운로드 주소를 받지 못했습니다. 다시 실행해주세요.');
     $('#result').innerHTML = `<strong>편집 완료</strong><br>${data.summary || 'AI가 선택한 구간을 편집했습니다.'}<br><a href="${downloadUrl}" download>완성된 MP4 다운로드 →</a>`;
     $('#result').classList.remove('hidden');
   } catch (error) { showStatus(error.message, true); }

@@ -61,7 +61,7 @@ const server = http.createServer(async (req,res) => {
     results.set(id,output);
     setTimeout(async()=>{if(results.get(id)===output){results.delete(id);await rm(output,{force:true});}},60*60*1000).unref();
     const protocol=req.headers['x-forwarded-proto']||'https';
-    jobs.set(id,{status:'complete',resultUrl:`${protocol}://${req.headers.host}/results/${id}`,clips});
+    jobs.set(id,{status:'complete',resultId:id,resultUrl:`${protocol}://${req.headers.host}/results/${id}`,clips});
   } catch (e) { console.error('Video job failed:', e); jobs.set(id,{status:'failed',error:e.message}); } finally { await rm(input,{force:true}); await rm(audio,{force:true}); }
 });
 
