@@ -49,7 +49,7 @@ async function editVideo(id,payload){
   const transcriptPath=path.join(temp,`${payload.transcriptId}.json`);let transcript;
   try{transcript=JSON.parse(await readFile(transcriptPath,'utf8'));}catch{throw new Error('전사 파일이 만료됐습니다. 1단계 전사를 다시 해주세요.');}
   const duration=Number(payload.duration);if(!Number.isFinite(duration)||duration<15||duration>3600)throw new Error('목표 길이는 15~3600초로 입력해주세요.');
-  const input=path.join(temp,`${id}.mp4`),output=path.join(temp,`${id}-edited.mp4`),assPath=path.join(temp,`${id}.ass`);
+  const input=path.join(temp,`${id}.mp4`),output=path.join(temp,`${id}-edited.mp4`),listPath=path.join(temp,`${id}-clips.txt`),clipPaths=[];
   try{
     status(id,'원본 영상을 다시 불러오는 중입니다.');await writeStream(transcript.sourceUrl,input);
     status(id,'AI가 전사와 타임라인 요구사항을 바탕으로 구간을 고르는 중입니다.');
@@ -62,22 +62,27 @@ async function editVideo(id,payload){
       if(remaining<=0)break;const start=Math.max(0,Number(raw.start));const end=Math.min(Number(raw.end),transcript.duration,start+remaining);if(end>start){clips.push({start,end,reason:String(raw.reason||'')});remaining-=end-start;}
     }
     if(!clips.length)throw new Error('편집할 구간을 고르지 못했습니다. 요구사항을 조금 더 구체적으로 적어주세요.');
-    const filters=clips.flatMap((c,i)=>[`[0:v]trim=start=${c.start}:end=${c.end},setpts=PTS-STARTPTS[v${i}]`,`[0:a]atrim=start=${c.start}:end=${c.end},asetpts=PTS-STARTPTS[a${i}]`]);
-    filters.push(`${clips.map((_,i)=>`[v${i}][a${i}]`).join('')}concat=n=${clips.length}:v=1:a=1[vcat][acat]`);
-    const portrait=payload.aspectRatio==='9:16',width=portrait?1080:1920,height=portrait?1920:1080;let videoFilter=`[vcat]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1`;
-    if(payload.subtitles!==false){
-      let elapsed=0;const dialogues=[];
-      for(const clip of clips){for(const segment of transcript.segments){const start=Math.max(clip.start,Number(segment.start)),end=Math.min(clip.end,Number(segment.end));if(end>start&&segment.text?.trim())dialogues.push(`Dialogue: 0,${toAssTime(elapsed+start-clip.start)},${toAssTime(elapsed+end-clip.start)},Default,,0,0,0,,${safeAss(segment.text.trim())}`);}elapsed+=clip.end-clip.start;}
-      const fontSize=portrait?54:48,margin=portrait?150:60;
-      const ass=`[Script Info]\nScriptType: v4.00+\nPlayResX: ${width}\nPlayResY: ${height}\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,OutlineColour,BackColour,Bold,Italic,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Default,Noto Sans CJK KR,${fontSize},&H00FFFFFF,&H00000000,&H99000000,1,0,1,3,1,2,60,60,${margin},1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n${dialogues.join('\n')}\n`;
-      await writeFile(assPath,ass);videoFilter+=`,ass=${assPath}`;
+    const portrait=payload.aspectRatio==='9:16',width=portrait?720:1280,height=portrait?1280:720;
+    for(let index=0;index<clips.length;index++){
+      const clip=clips[index],clipPath=path.join(temp,`${id}-part-${String(index).padStart(3,'0')}.mp4`),assPath=path.join(temp,`${id}-part-${String(index).padStart(3,'0')}.ass`);clipPaths.push(clipPath);
+      let videoFilter=`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1`;
+      if(payload.subtitles!==false){
+        const dialogues=transcript.segments.flatMap(segment=>{const start=Math.max(clip.start,Number(segment.start)),end=Math.min(clip.end,Number(segment.end));return end>start&&segment.text?.trim()?[`Dialogue: 0,${toAssTime(start-clip.start)},${toAssTime(end-clip.start)},Default,,0,0,0,,${safeAss(segment.text.trim())}`]:[];});
+        const fontSize=portrait?48:36,margin=portrait?100:40;
+        const ass=`[Script Info]\nScriptType: v4.00+\nPlayResX: ${width}\nPlayResY: ${height}\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,OutlineColour,BackColour,Bold,Italic,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Default,Noto Sans CJK KR,${fontSize},&H00FFFFFF,&H00000000,&H99000000,1,0,1,3,1,2,40,40,${margin},1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n${dialogues.join('\n')}\n`;
+        await writeFile(assPath,ass);videoFilter+=`,subtitles=${assPath}`;
+      }
+      status(id,`선택 구간 렌더링 중입니다. (${index+1}/${clips.length})`);
+      await run(['-y','-ss',clip.start.toFixed(3),'-i',input,'-t',(clip.end-clip.start).toFixed(3),'-map','0:v:0','-map','0:a:0?','-vf',videoFilter,'-c:v','libx264','-preset','ultrafast','-crf','24','-c:a','aac','-b:a','128k',clipPath]);
+      await rm(assPath,{force:true});
     }
-    filters.push(`${videoFilter}[vout]`);status(id,'선택한 구간과 자막으로 영상을 렌더링 중입니다.');
-    await run(['-y','-i',input,'-filter_complex',filters.join(';'),'-map','[vout]','-map','[acat]','-c:v','libx264','-preset','veryfast','-crf','23','-c:a','aac','-b:a','128k',output]);
+    await writeFile(listPath,clipPaths.map(file=>`file '${file}'`).join('\n')+'\n');
+    status(id,'영상 구간을 이어 붙이고 있습니다.');
+    await run(['-y','-f','concat','-safe','0','-i',listPath,'-c','copy','-movflags','+faststart',output]);
     results.set(id,output);const protocol='https';jobs.set(id,{status:'complete',resultId:id,clips,outputDuration:clips.reduce((sum,c)=>sum+c.end-c.start,0)});
     setTimeout(async()=>{if(results.get(id)===output){results.delete(id);await rm(output,{force:true});}},60*60*1000).unref();
   }catch(error){console.error('Video edit job failed:',error);jobs.set(id,{status:'failed',error:error.message});}
-  finally{await rm(input,{force:true});await rm(assPath,{force:true});}
+  finally{await rm(input,{force:true});await rm(listPath,{force:true});for(const file of clipPaths)await rm(file,{force:true});}
 }
 
 const server=http.createServer(async(req,res)=>{
