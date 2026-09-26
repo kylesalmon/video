@@ -89,6 +89,7 @@ $('#runButton').onclick = async () => {
       while (true) {
         await new Promise(resolve => setTimeout(resolve, 10000));
         const job = await fetch(`/api/job?id=${encodeURIComponent(data.jobId)}`).then(r => r.json());
+        if (job.status === 'processing' && job.message) showStatus(job.message);
         if (job.status === 'failed') throw new Error(job.error || '영상 처리가 실패했습니다.');
         if (job.status === 'complete') { data = job; break; }
       }
