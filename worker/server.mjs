@@ -94,7 +94,7 @@ const server=http.createServer(async(req,res)=>{
     const payload=await body(req);
     if(url.pathname==='/transcriptions'||url.pathname==='/edits'){
       const id=randomUUID();jobs.set(id,{status:'processing',message:'작업을 준비하는 중입니다.'});json(res,202,{jobId:id});
-      if(url.pathname==='/transcriptions')void transcribe(id,payload);else void editVideo(id,payload).catch(error=>{console.error('Video edit setup failed:',error);jobs.set(id,{status:'failed',error:error.message});});
+      if(url.pathname==='/transcriptions')void transcribe(id,payload).catch(error=>{console.error('Transcription setup failed:',error);jobs.set(id,{status:'failed',error:error.message});});else void editVideo(id,payload).catch(error=>{console.error('Video edit setup failed:',error);jobs.set(id,{status:'failed',error:error.message});});
       return;
     }
     return json(res,404,{error:'Not found'});
