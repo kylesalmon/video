@@ -52,13 +52,16 @@ const server = http.createServer(async (req,res) => {
     }
     if (!segments.length) throw new Error('OpenAI transcription returned no speech segments');
     jobs.set(id,{status:'processing',message:'AI가 편집 구간을 고르는 중입니다.'});
-    const planPrompt=`Pick chronological transcript segments totaling about ${duration} seconds for: ${instruction}. Return only JSON {"clips":[{"start":number,"end":number}]}. Segments: ${JSON.stringify(segments)}`;
+    const planPrompt=`You are editing a source video. User request: ${instruction}\nTarget final duration: EXACTLY about ${duration} seconds (never exceed ${duration} seconds). Choose only the most relevant chronological transcript moments. Return only JSON {"clips":[{"start":number,"end":number,"reason":"short Korean reason"}]}. The SUM of (end-start) must be no more than ${duration}. Segments: ${JSON.stringify(segments)}`;
     const planningResponse=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'content-type':'application/json'},body:JSON.stringify({model:'gpt-4.1-mini',input:planPrompt})});
     const planResponse=await planningResponse.json();
     if (!planningResponse.ok) throw new Error(`OpenAI edit planning: ${planResponse.error?.message || planningResponse.status}`);
     const planText=planResponse.output_text || planResponse.output?.flatMap(item=>item.content||[]).find(item=>item.type==='output_text')?.text;
     if (!planText) throw new Error('OpenAI edit planning returned no text output');
-    const plan=JSON.parse(planText.replace(/^```(?:json)?\s*|\s*```$/g,'')); const clips=plan.clips.filter(c=>c.end>c.start).slice(0,30); if(!clips.length) throw new Error('No edit clips selected');
+    const plan=JSON.parse(planText.replace(/^```(?:json)?\s*|\s*```$/g,''));
+    let remaining=Number(duration); const clips=[];
+    for (const clip of (plan.clips||[]).filter(c=>Number(c.end)>Number(c.start)).sort((a,b)=>a.start-b.start).slice(0,30)) { if(remaining<=0) break; const start=Number(clip.start); const end=Math.min(Number(clip.end),start+remaining); if(end>start){clips.push({start,end,reason:clip.reason||''});remaining-=end-start;} }
+    if(!clips.length) throw new Error('No edit clips selected');
     const output=path.join(temp,`${id}-edited.mp4`); const filters=clips.flatMap((c,i)=>[`[0:v]trim=start=${c.start}:end=${c.end},setpts=PTS-STARTPTS[v${i}]`,`[0:a]atrim=start=${c.start}:end=${c.end},asetpts=PTS-STARTPTS[a${i}]`]); filters.push(`${clips.map((_,i)=>`[v${i}][a${i}]`).join('')}concat=n=${clips.length}:v=1:a=1[v][a]`);
     jobs.set(id,{status:'processing',message:'선택한 구간으로 최종 영상을 만드는 중입니다.'});
     await run(['-y','-i',input,'-filter_complex',filters.join(';'),'-map','[v]','-map','[a]',output]);
