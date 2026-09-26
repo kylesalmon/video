@@ -3,55 +3,61 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Clipnote — AI 영상 편집</title>
+    <title>Clipnote AI 영상 편집</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="shell">
       <header>
         <p class="eyebrow">AI VIDEO EDITOR</p>
-        <h1>설명 한 줄로<br /><em>필요한 영상만</em> 남기세요.</h1>
-        <p class="intro">원본을 읽고, 자막과 화면을 분석해 원하는 길이의 새 MP4를 만듭니다.</p>
+        <h1>긴 영상에서<br /><em>필요한 장면만</em> 골라요.</h1>
+        <p class="intro">먼저 전체 대사를 만들고 확인한 다음, 원하는 타임라인과 자막으로 영상을 편집하세요.</p>
       </header>
 
-      <section class="editor" aria-label="영상 생성 설정">
+      <section class="editor" aria-label="영상 전사 및 편집">
+        <h2>1단계 · 영상 대사 만들기</h2>
         <div class="source-tabs" role="tablist">
-          <button class="tab active" id="youtubeTab" type="button">YouTube 링크</button>
-          <button class="tab" id="uploadTab" type="button">MP4 올리기</button>
+          <button class="tab active" id="youtubeTab" type="button">YouTube 채널</button>
+          <button class="tab" id="uploadTab" type="button">MP4 업로드</button>
         </div>
-
         <div id="youtubePanel" class="source-panel">
-          <label>내 YouTube 영상</label>
           <div id="youtubeConnect">
-            <p class="hint">내 채널을 연결하면 업로드한 영상과 편집 권한이 있는 자막을 확인할 수 있습니다.</p>
+            <p class="hint">YouTube 채널을 연결하면 내 영상과 자막 권한을 확인할 수 있습니다. 편집할 원본 MP4는 업로드해주세요.</p>
             <a class="connect" href="/api/youtube-auth?action=begin">YouTube 채널 연결</a>
           </div>
           <div id="youtubeLibrary" class="hidden">
-            <select id="youtubeVideo"><option value="">영상을 불러오는 중…</option></select>
+            <select id="youtubeVideo"><option value="">영상 선택</option></select>
             <p id="captionStatus" class="hint"></p>
           </div>
-          <p class="hint">원본 파일은 YouTube Studio에서 내려받아 MP4로 올린 뒤 편집합니다.</p>
         </div>
         <div id="uploadPanel" class="source-panel hidden">
           <label class="dropzone" for="videoFile">
             <input id="videoFile" type="file" accept="video/mp4,.mp4" />
-            <span class="plus">+</span>
-            <strong>MP4 파일 선택</strong>
-            <small id="fileName">대용량 MP4 지원 · 비공개 저장소에 안전하게 보관됩니다</small>
+            <span class="plus">+</span><strong>MP4 파일 선택</strong>
+            <small id="fileName">MP4 원본을 선택하세요.</small>
           </label>
         </div>
+        <button id="transcribeButton" class="run full" type="button">대사 전사 시작 →</button>
 
-        <label for="instruction">어떤 영상으로 만들까요?</label>
-        <textarea id="instruction" rows="4" placeholder="예: 창업자가 제품의 핵심 가치를 설명하는 부분을 자연스럽게 이어서, 신뢰감 있는 3분 소개 영상으로 만들어줘."></textarea>
+        <section id="transcriptSection" class="transcript hidden">
+          <h2>전사 완료</h2>
+          <p id="transcriptMeta" class="hint"></p>
+          <a id="transcriptDownload" class="connect" href="#" download>대사 TXT 다운로드</a>
+          <details><summary>대사 미리보기</summary><pre id="transcriptPreview"></pre></details>
 
-        <div class="duration-row">
-          <div>
-            <label for="duration">목표 길이</label>
-            <input id="duration" type="number" min="15" max="3600" value="180" />
-            <span>초</span>
+          <hr />
+          <h2>2단계 · 편집 요구사항 작성</h2>
+          <label for="instruction">원하는 영상 설명</label>
+          <textarea id="instruction" rows="3" placeholder="예: 창업자가 제품의 핵심 가치를 설명하는 대목을 중심으로, 반복이나 말실수는 빼고 자연스럽게 편집해줘."></textarea>
+          <label for="timeline">원하는 타임라인 (선택)</label>
+          <textarea id="timeline" rows="5" placeholder="예:\n0:00~0:30 문제 제기\n0:30~2:00 제품의 장점\n2:00~5:00 실제 사례\n5:00~7:00 요약과 마무리\n전사 내용과 시간대를 참고해 가장 가까운 구간을 골라주세요."></textarea>
+          <div class="edit-options">
+            <div><label for="duration">목표 길이 (초)</label><input id="duration" type="number" min="15" max="3600" value="420" /></div>
+            <div><label for="aspectRatio">화면 비율</label><select id="aspectRatio"><option value="16:9">가로 16:9</option><option value="9:16">세로 9:16</option></select></div>
           </div>
-          <button id="runButton" class="run" type="button">AI로 영상 만들기 <span>→</span></button>
-        </div>
+          <label class="check"><input id="subtitles" type="checkbox" checked /> 한글 자막을 영상에 넣기</label>
+          <button id="editButton" class="run full" type="button">요구사항으로 영상 편집 →</button>
+        </section>
       </section>
 
       <section id="status" class="status hidden" aria-live="polite"></section>
