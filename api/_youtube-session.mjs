@@ -23,6 +23,7 @@ export function clearSession() { return 'yt_session=; Path=/; HttpOnly; Secure; 
 export async function freshSession(request, response) {
   const session = readSession(request);
   if (!session) return null;
+  if (!session.session_expires_at) response.setHeader('Set-Cookie', sessionCookie(session));
   if (session.expires_at > Date.now() + 60_000 || !session.refresh_token) return session;
   const refreshed = await fetch('https://oauth2.googleapis.com/token', {
     method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'},
