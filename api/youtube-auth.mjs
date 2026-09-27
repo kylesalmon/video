@@ -11,7 +11,7 @@ export default async function handler(request, response) {
     const state = randomBytes(24).toString('base64url');
     response.setHeader('Set-Cookie', `yt_oauth_state=${state}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
     const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    url.search = new URLSearchParams({ client_id:process.env.GOOGLE_CLIENT_ID, redirect_uri:redirectUri, response_type:'code', scope:'https://www.googleapis.com/auth/youtube.force-ssl', access_type:'offline', include_granted_scopes:'true', state }).toString();
+    url.search = new URLSearchParams({ client_id:process.env.GOOGLE_CLIENT_ID, redirect_uri:redirectUri, response_type:'code', scope:'https://www.googleapis.com/auth/youtube.force-ssl', access_type:'offline', prompt:'consent', include_granted_scopes:'true', state }).toString();
     return response.redirect(302, url.toString());
   }
   if (action === 'callback') {
@@ -20,7 +20,7 @@ export default async function handler(request, response) {
     if (request.query.error) return fail(response, 'YouTube 연결이 취소되었습니다.');
     const token = await fetch('https://oauth2.googleapis.com/token', { method:'POST', headers:{'content-type':'application/x-www-form-urlencoded'}, body:new URLSearchParams({ code:request.query.code, client_id:process.env.GOOGLE_CLIENT_ID, client_secret:process.env.GOOGLE_CLIENT_SECRET, redirect_uri:redirectUri, grant_type:'authorization_code' }) }).then(r => r.json());
     if (!token.access_token) return fail(response, token.error_description || 'YouTube 토큰을 받지 못했습니다.');
-    response.setHeader('Set-Cookie', [sessionCookie({access_token:token.access_token, expires_at:Date.now() + token.expires_in * 1000}), 'yt_oauth_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0']);
+    response.setHeader('Set-Cookie', [sessionCookie({access_token:token.access_token, refresh_token:token.refresh_token, expires_at:Date.now() + token.expires_in * 1000}), 'yt_oauth_state=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0']);
     return response.redirect(302, '/?youtube=connected');
   }
   if (action === 'disconnect') { response.setHeader('Set-Cookie', clearSession()); return response.redirect(302, '/'); }

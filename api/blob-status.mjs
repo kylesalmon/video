@@ -7,5 +7,6 @@ export default function handler(request, response) {
     ready: configured && Boolean(readSession(request)),
     configured,
     connected: Boolean(readSession(request)),
+    appOrigin: process.env.APP_ORIGIN || null,
   });
 }
