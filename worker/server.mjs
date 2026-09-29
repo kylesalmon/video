@@ -6,6 +6,7 @@ import { Readable } from 'node:stream';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import { selectClips } from './selectClips.mjs';
 
 const temp='/tmp/clipnote'; await mkdir(temp,{recursive:true});
 const jobs=new Map(); const results=new Map();
@@ -18,7 +19,6 @@ const auth=req=>req.headers.authorization===`Bearer ${process.env.WORKER_API_SEC
 const writeStream=async(url,file)=>{const response=await fetch(url);if(!response.ok||!response.body)throw new Error(`원본 다운로드 실패 (${response.status})`);await finished(Readable.fromWeb(response.body).pipe(createWriteStream(file)));};
 const toAssTime=seconds=>{const centis=Math.floor(Math.max(0,seconds)*100)%100;const total=Math.floor(Math.max(0,seconds));return `${Math.floor(total/3600)}:${String(Math.floor(total%3600/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}.${String(centis).padStart(2,'0')}`;};
 const safeAss=text=>String(text||'').replace(/[{}]/g,'').replace(/\\/g,'\\\\').replace(/\r?\n/g,'\\N');
-const outputText=data=>data.output_text||data.output?.flatMap(item=>item.content||[]).find(item=>item.type==='output_text')?.text;
 const prettySpeaker=id=>/^speaker-(\d+)$/.test(String(id||''))?`화자 ${id.match(/\d+/)[0]}`:'화자 미상';
 const mergeSpeakerSegments=segments=>segments.sort((a,b)=>a.start-b.start).reduce((merged,segment)=>{const previous=merged.at(-1);if(previous&&previous.speaker===segment.speaker&&segment.start-previous.end<=1.1&&segment.end-previous.start<=25){previous.text=`${previous.text.trimEnd()} ${String(segment.text||'').trimStart()}`.trim();previous.end=segment.end;}else merged.push({...segment,text:String(segment.text||'').trim()});return merged;},[]);
 
@@ -66,17 +66,9 @@ async function editVideo(id,payload){
   const duration=Number(payload.duration);if(!Number.isFinite(duration)||duration<15||duration>3600)throw new Error('목표 길이는 15~3600초로 입력해주세요.');
   const input=path.join(temp,`${id}.mp4`),output=path.join(temp,`${id}-edited.mp4`),listPath=path.join(temp,`${id}-clips.txt`),clipPaths=[];
   try{
-    status(id,'원본 영상을 다시 불러오는 중입니다.');await writeStream(transcript.sourceUrl,input);
-    status(id,'AI가 전사와 타임라인 요구사항을 바탕으로 구간을 고르는 중입니다.');
-    const prompt=`당신은 영상 편집자입니다. 사용자의 편집 요구사항과 타임라인을 우선 반영하세요.\n요구사항:\n${payload.instruction||'타임라인 지시를 따르세요.'}\n타임라인 지시:\n${payload.timeline||'지정 없음. 요구사항과 대사를 기준으로 구성하세요.'}\n\n목표 완성 길이: ${duration}초. 선택 구간의 총합은 ${duration}초를 넘지 말고 가능한 한 목표에 가깝게 만드세요.\n원본 전체 길이: ${transcript.duration}초.\n전사 시간은 원본 영상 기준 초입니다. 타임라인에 지정한 각 주제의 대사를 우선 고르세요. 관련도가 높은 구간을 고르고, 순서는 원본 시간순으로 유지하세요. 각 구간마다 짧은 한국어 이유를 적으세요.\nJSON만 반환: {"clips":[{"start":초,"end":초,"reason":"이유"}]}\n전사:\n${JSON.stringify(transcript.segments)}`;
-    const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'content-type':'application/json'},body:JSON.stringify({model:'gpt-4.1-mini',input:prompt})});const response=await r.json();
-    if(!r.ok)throw new Error(`OpenAI 편집 구간 선택: ${response.error?.message||r.status}`);
-    const text=outputText(response);if(!text)throw new Error('AI가 편집 구간을 반환하지 않았습니다.');
-    const plan=JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g,''));let remaining=duration;const clips=[];
-    for(const raw of (plan.clips||[]).filter(c=>Number.isFinite(Number(c.start))&&Number.isFinite(Number(c.end))&&Number(c.end)>Number(c.start)).sort((a,b)=>a.start-b.start).slice(0,60)){
-      if(remaining<=0)break;const start=Math.max(0,Number(raw.start));const end=Math.min(Number(raw.end),transcript.duration,start+remaining);if(end>start){clips.push({start,end,reason:String(raw.reason||'')});remaining-=end-start;}
-    }
-    if(!clips.length)throw new Error('편집할 구간을 고르지 못했습니다. 요구사항을 조금 더 구체적으로 적어주세요.');
+    status(id,'AI가 실제 발화 ID를 기준으로 편집 구간을 고르는 중입니다.');
+    const clips=await selectClips({transcript,payload,duration});
+    status(id,'선택된 편집 구간의 원본 영상을 불러오는 중입니다.');await writeStream(transcript.sourceUrl,input);
     const portrait=payload.aspectRatio==='9:16',width=portrait?720:1280,height=portrait?1280:720;
     for(let index=0;index<clips.length;index++){
       const clip=clips[index],clipPath=path.join(temp,`${id}-part-${String(index).padStart(3,'0')}.mp4`),assPath=path.join(temp,`${id}-part-${String(index).padStart(3,'0')}.ass`);clipPaths.push(clipPath);
