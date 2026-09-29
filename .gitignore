@@ -2,3 +2,6 @@
 outputs/
 .env
 node_modules/
+
+.vercel
+.env*

@@ -10,7 +10,8 @@ import path from 'node:path';
 const temp='/tmp/clipnote'; await mkdir(temp,{recursive:true});
 const jobs=new Map(); const results=new Map();
 const json=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify(data));};
-const run=args=>new Promise((resolve,reject)=>{const p=spawn('ffmpeg',args);let err='';p.stderr.on('data',d=>err+=d);p.on('error',reject);p.on('close',c=>c===0?resolve():reject(new Error(err.slice(-1200))));});
+const run=args=>new Promise((resolve,reject)=>{const p=spawn('ffmpeg',['-hide_banner','-loglevel','error','-nostats',...args]);let err='';p.stderr.on('data',d=>{err=(err+d).slice(-1200);});p.on('error',reject);p.on('close',c=>c===0?resolve():reject(new Error(err||`ffmpeg exited with code ${c}`)));});
+const probeDuration=file=>new Promise((resolve,reject)=>{const p=spawn('ffprobe',['-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',file]);let out='',err='';p.stdout.on('data',d=>out+=d);p.stderr.on('data',d=>err+=d);p.on('error',reject);p.on('close',c=>{const duration=Number(out.trim());c===0&&Number.isFinite(duration)?resolve(duration):reject(new Error(err||'영상 길이를 확인하지 못했습니다.'));});});
 const body=req=>new Promise((resolve,reject)=>{const chunks=[];req.on('data',c=>chunks.push(c));req.on('end',()=>{try{resolve(JSON.parse(Buffer.concat(chunks)))}catch(e){reject(e)}});req.on('error',reject);});
 const status=(id,message)=>jobs.set(id,{status:'processing',message});
 const auth=req=>req.headers.authorization===`Bearer ${process.env.WORKER_API_SECRET}`;
@@ -18,28 +19,42 @@ const writeStream=async(url,file)=>{const response=await fetch(url);if(!response
 const toAssTime=seconds=>{const centis=Math.floor(Math.max(0,seconds)*100)%100;const total=Math.floor(Math.max(0,seconds));return `${Math.floor(total/3600)}:${String(Math.floor(total%3600/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}.${String(centis).padStart(2,'0')}`;};
 const safeAss=text=>String(text||'').replace(/[{}]/g,'').replace(/\\/g,'\\\\').replace(/\r?\n/g,'\\N');
 const outputText=data=>data.output_text||data.output?.flatMap(item=>item.content||[]).find(item=>item.type==='output_text')?.text;
+const prettySpeaker=id=>/^speaker-(\d+)$/.test(String(id||''))?`화자 ${id.match(/\d+/)[0]}`:'화자 미상';
+const mergeSpeakerSegments=segments=>segments.sort((a,b)=>a.start-b.start).reduce((merged,segment)=>{const previous=merged.at(-1);if(previous&&previous.speaker===segment.speaker&&segment.start-previous.end<=1.1&&segment.end-previous.start<=25){previous.text=`${previous.text.trimEnd()} ${String(segment.text||'').trimStart()}`.trim();previous.end=segment.end;}else merged.push({...segment,text:String(segment.text||'').trim()});return merged;},[]);
 
 async function transcribe(id,payload){
   const sourceUrl=new URL(payload.sourceUrl);
   if(!sourceUrl.hostname.endsWith('.public.blob.vercel-storage.com'))throw new Error('공개 Blob에 업로드된 MP4 주소가 아닙니다.');
-  const input=path.join(temp,`${id}.mp4`),audio=path.join(temp,`${id}.mp3`),chunkPrefix=`${id}-chunk-`;
+  const input=path.join(temp,`${id}.mp4`),audio=path.join(temp,`${id}.mp3`),chunkPrefix=`${id}-chunk-`,speakerRefs=[];
   try{
     status(id,'원본 영상을 내려받는 중입니다.');await writeStream(sourceUrl,input);
-    status(id,'자막용 음성을 준비하는 중입니다.');await run(['-y','-i',input,'-vn','-ac','1','-ar','16000','-codec:a','libmp3lame','-b:a','16k',audio]);
-    const pattern=path.join(temp,`${chunkPrefix}%03d.mp3`);await run(['-y','-i',audio,'-f','segment','-segment_time','900','-c','copy',pattern]);
-    const chunks=(await readdir(temp)).filter(name=>name.startsWith(chunkPrefix)&&name.endsWith('.mp3')).sort();
-    const segments=[];let offset=0;
-    for(let i=0;i<chunks.length;i++){
-      status(id,`자막 분석 중입니다. (${i+1}/${chunks.length})`);
-      const file=path.join(temp,chunks[i]);const form=new FormData();form.append('file',new Blob([await readFile(file)],{type:'audio/mpeg'}),chunks[i]);form.append('model','whisper-1');form.append('response_format','verbose_json');form.append('timestamp_granularities[]','segment');
+    status(id,'말소리가 잘 드러나도록 음성 대역을 정리하는 중입니다.');await run(['-y','-i',input,'-vn','-af','highpass=f=100,lowpass=f=7500','-ac','1','-ar','16000','-codec:a','libmp3lame','-b:a','16k',audio]);
+    const duration=await probeDuration(audio),coreSeconds=900,overlapSeconds=5,totalChunks=Math.ceil(duration/coreSeconds),segments=[];let nextSpeaker=1;
+    for(let i=0;i<totalChunks;i++){
+      const coreStart=i*coreSeconds,coreEnd=Math.min(duration,(i+1)*coreSeconds),chunkStart=Math.max(0,coreStart-overlapSeconds),chunkEnd=Math.min(duration,coreEnd+overlapSeconds),file=path.join(temp,`${chunkPrefix}${String(i).padStart(3,'0')}.mp3`);
+      status(id,`화자와 대사를 분석 중입니다. (${i+1}/${totalChunks})`);
+      await run(['-y','-ss',chunkStart.toFixed(3),'-i',audio,'-t',(chunkEnd-chunkStart).toFixed(3),'-ac','1','-ar','16000','-codec:a','libmp3lame','-b:a','24k',file]);
+      const form=new FormData();form.append('file',new Blob([await readFile(file)],{type:'audio/mpeg'}),path.basename(file));form.append('model','gpt-4o-transcribe-diarize');form.append('response_format','diarized_json');form.append('chunking_strategy','auto');
+      for(const ref of speakerRefs){form.append('known_speaker_names[]',ref.name);form.append('known_speaker_references[]',ref.dataUrl);}
       const r=await fetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`},body:form});const data=await r.json();
-      if(!r.ok)throw new Error(`OpenAI transcription: ${data.error?.message||r.status}`);
-      segments.push(...(data.segments||[]).map(s=>({...s,start:Number(s.start)+offset,end:Number(s.end)+offset})));
-      offset+=Number(data.duration)||900;await rm(file,{force:true});
+      if(!r.ok)throw new Error(`OpenAI 화자 전사: ${data.error?.message||r.status}`);
+      const localSpeakers=new Map(),sampled=new Set();
+      for(const s of data.segments||[]){const label=String(s.speaker||'').trim(),text=String(s.text||'').trim();if(!label||!text||/^\[(music|applause|noise|sound|laughter)\]$/i.test(text))continue;
+        let speaker;if(speakerRefs.some(ref=>ref.name===label))speaker=label;else if(localSpeakers.has(label))speaker=localSpeakers.get(label);else{speaker=`speaker-${nextSpeaker++}`;localSpeakers.set(label,speaker);}
+        const localStart=Number(s.start),localEnd=Number(s.end),start=localStart+chunkStart,end=localEnd+chunkStart,midpoint=(start+end)/2;
+        if(midpoint>=coreStart&&(midpoint<coreEnd||i===totalChunks-1&&midpoint<=coreEnd+0.25))segments.push({start,end,text,speaker});
+        if(!sampled.has(speaker)&&!speakerRefs.some(ref=>ref.name===speaker)&&speakerRefs.length<4&&localEnd-localStart>=2){
+          const refFile=path.join(temp,`${id}-${speaker}-ref.wav`),sampleDuration=Math.min(8,localEnd-localStart);
+          await run(['-y','-ss',localStart.toFixed(3),'-i',file,'-t',sampleDuration.toFixed(3),'-ac','1','-ar','16000','-c:a','pcm_s16le',refFile]);
+          const refData=(await readFile(refFile)).toString('base64');speakerRefs.push({name:speaker,dataUrl:`data:audio/wav;base64,${refData}`});sampled.add(speaker);await rm(refFile,{force:true});
+        }
+      }
+      await rm(file,{force:true});
     }
     if(!segments.length)throw new Error('음성에서 전사할 대사를 찾지 못했습니다.');
-    const transcript={id,sourceUrl:payload.sourceUrl,duration:offset,segments};await writeFile(path.join(temp,`${id}.json`),JSON.stringify(transcript));
-    jobs.set(id,{status:'complete',transcriptId:id,duration:offset,segmentCount:segments.length});
+    const merged=mergeSpeakerSegments(segments);merged.forEach((segment,index)=>segment.id=index);
+    const transcript={id,sourceUrl:payload.sourceUrl,duration,segments:merged,speakerCount:new Set(merged.map(s=>s.speaker)).size};await writeFile(path.join(temp,`${id}.json`),JSON.stringify(transcript));
+    jobs.set(id,{status:'complete',transcriptId:id,duration,segmentCount:merged.length,speakerCount:transcript.speakerCount});
     setTimeout(async()=>{await rm(path.join(temp,`${id}.json`),{force:true});jobs.delete(id);},24*60*60*1000).unref();
   }catch(error){console.error('Transcription job failed:',error);jobs.set(id,{status:'failed',error:error.message});}
   finally{await rm(input,{force:true});await rm(audio,{force:true});for(const name of await readdir(temp)){if(name.startsWith(chunkPrefix))await rm(path.join(temp,name),{force:true});}}
@@ -67,7 +82,7 @@ async function editVideo(id,payload){
       const clip=clips[index],clipPath=path.join(temp,`${id}-part-${String(index).padStart(3,'0')}.mp4`),assPath=path.join(temp,`${id}-part-${String(index).padStart(3,'0')}.ass`);clipPaths.push(clipPath);
       let videoFilter=`scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1`;
       if(payload.subtitles!==false){
-        const dialogues=transcript.segments.flatMap(segment=>{const start=Math.max(clip.start,Number(segment.start)),end=Math.min(clip.end,Number(segment.end));return end>start&&segment.text?.trim()?[`Dialogue: 0,${toAssTime(start-clip.start)},${toAssTime(end-clip.start)},Default,,0,0,0,,${safeAss(segment.text.trim())}`]:[];});
+        const dialogues=transcript.segments.flatMap(segment=>{const start=Math.max(clip.start,Number(segment.start)),end=Math.min(clip.end,Number(segment.end));return end>start&&segment.text?.trim()?[`Dialogue: 0,${toAssTime(start-clip.start)},${toAssTime(end-clip.start)},Default,,0,0,0,,${safeAss(`${prettySpeaker(segment.speaker)}: ${segment.text.trim()}`)}`]:[];});
         const fontSize=portrait?48:36,margin=portrait?100:40;
         const ass=`[Script Info]\nScriptType: v4.00+\nPlayResX: ${width}\nPlayResY: ${height}\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,OutlineColour,BackColour,Bold,Italic,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: Default,Noto Sans CJK KR,${fontSize},&H00FFFFFF,&H00000000,&H99000000,1,0,1,3,1,2,40,40,${margin},1\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n${dialogues.join('\n')}\n`;
         await writeFile(assPath,ass);videoFilter+=`,subtitles=${assPath}`;
@@ -91,7 +106,7 @@ const server=http.createServer(async(req,res)=>{
   if(!auth(req))return json(res,401,{error:'Unauthorized'});
   if(req.method==='GET'&&url.pathname.startsWith('/jobs/'))return json(res,jobs.has(url.pathname.slice(6))?200:404,jobs.get(url.pathname.slice(6))||{error:'Job not found'});
   if(req.method==='GET'&&url.pathname.startsWith('/transcripts/')){
-    const id=path.basename(url.pathname).replace(/\.txt$/,'');try{const transcript=JSON.parse(await readFile(path.join(temp,`${id}.json`),'utf8'));if(url.pathname.endsWith('.txt')){res.writeHead(200,{'content-type':'text/plain; charset=utf-8','content-disposition':`attachment; filename="transcript-${id}.txt"`});return res.end(transcript.segments.map(s=>`[${toAssTime(s.start).slice(0,8)}] ${s.text}`).join('\n'));}return json(res,200,{id,duration:transcript.duration,segments:transcript.segments});}catch{return json(res,404,{error:'Transcript not found'});}
+    const id=path.basename(url.pathname).replace(/\.txt$/,'');try{const transcript=JSON.parse(await readFile(path.join(temp,`${id}.json`),'utf8'));if(url.pathname.endsWith('.txt')){const dialogue=transcript.segments.map(s=>`[${toAssTime(s.start).slice(0,8)}] ${prettySpeaker(s.speaker)}: ${s.text}`).join('\n');res.writeHead(200,{'content-type':'text/plain; charset=utf-8','content-disposition':`attachment; filename="transcript-${id}.txt"`});return res.end(`영상 길이: ${toAssTime(transcript.duration).slice(0,8)}\n감지 화자 수: ${transcript.speakerCount||0}\n\n대사 (화자별 발화 단위)\n${dialogue}`);}return json(res,200,{id,duration:transcript.duration,segments:transcript.segments,speakerCount:transcript.speakerCount||0});}catch{return json(res,404,{error:'Transcript not found'});}
   }
   if(req.method==='GET'&&url.pathname.startsWith('/results/')){const id=path.basename(url.pathname);const output=results.get(id);if(!output)return json(res,404,{error:'Result not found'});res.writeHead(200,{'content-type':'video/mp4','content-disposition':'attachment; filename="edited-video.mp4"'});return createReadStream(output).pipe(res);}
   if(req.method!=='POST')return json(res,404,{error:'Not found'});
