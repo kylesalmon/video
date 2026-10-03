@@ -46,6 +46,9 @@
         </div>
 
         <section id="editOptions" class="hidden" aria-label="영상 편집 요구사항">
+          <label for="transcriptFile">이미 추출한 대사 TXT 사용 (선택)</label>
+          <input id="transcriptFile" type="file" accept=".txt,text/plain" />
+          <small class="hint">시간 정보가 포함된 Clipnote 대사 TXT를 선택하면 전사를 다시 하지 않습니다.</small>
           <label for="instruction">원하는 영상 설명</label>
           <textarea id="instruction" rows="3" placeholder="예: 창업자가 제품의 핵심 가치를 설명하는 대목을 중심으로, 반복이나 말실수는 빼고 자연스럽게 편집해줘."></textarea>
           <label for="timeline">원하는 타임라인 (선택)</label>

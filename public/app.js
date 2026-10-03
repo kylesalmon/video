@@ -22,6 +22,7 @@ $('#transcribeButton').onclick=async()=>{
   const button=$('#transcribeButton'),instruction=$('#instruction').value.trim(),timeline=$('#timeline').value.trim(),duration=Number($('#duration').value);
   if(taskMode==='edit'&&!instruction&&!timeline)return showStatus('편집할 내용이나 타임라인을 입력해주세요.',true);
   if(taskMode==='edit'&&(!Number.isFinite(duration)||duration<15||duration>3600))return showStatus('목표 길이는 15초~3600초로 입력해주세요.',true);
+  if(taskMode==='edit'&&$('#transcriptFile').files[0]?.size>3_000_000)return showStatus('TXT 파일은 3MB 이하로 선택해주세요.',true);
   button.disabled=true;$('#transcriptMode').disabled=true;$('#editMode').disabled=true;$('#result').classList.add('hidden');$('#transcriptSection').classList.add('hidden');
   try{
     await originReady;
@@ -31,6 +32,12 @@ $('#transcribeButton').onclick=async()=>{
     if(!readiness.connected){showStatus('YouTube 계정 연결이 필요합니다. 연결 화면으로 이동합니다.');location.assign('/api/youtube-auth?action=begin');return;}
     showStatus('원본 영상을 저장소에 올리는 중입니다. 0%');
     const blob=await upload(`uploads/${Date.now()}-${file.name}`,file,{access:'public',handleUploadUrl:'/api/upload',multipart:true,onUploadProgress:({percentage})=>showStatus(`원본 업로드 중 · ${Math.round(percentage)}%`)});
+    const transcriptFile=$('#transcriptFile').files[0];
+    if(taskMode==='edit'&&transcriptFile){
+      showStatus('기존 대사 TXT를 불러와 영상 편집을 준비 중입니다.');
+      const editStarted=await apiJson('/api/edit',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sourceUrl:blob.url,transcriptText:await transcriptFile.text(),instruction,timeline,duration,aspectRatio:$('#aspectRatio').value,subtitles:$('#subtitles').checked})});
+      const editJob=await waitForJob(editStarted.jobId,'영상 편집');showEditResult(editJob);showStatus('영상 편집이 완료됐습니다.');return;
+    }
     showStatus(taskMode==='edit'?'영상 편집을 위해 대사와 화자를 분석 중입니다.':'대사와 화자를 분석 중입니다.');
     const started=await apiJson('/api/create',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sourceUrl:blob.url})});
     const transcriptJob=await waitForJob(started.jobId,taskMode==='edit'?'편집용 대사 분석':'대사 추출');
