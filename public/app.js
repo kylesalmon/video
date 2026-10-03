@@ -31,9 +31,9 @@ $('#transcribeButton').onclick=async()=>{
     if(!readiness.connected){showStatus('YouTube 계정 연결이 필요합니다. 연결 화면으로 이동합니다.');location.assign('/api/youtube-auth?action=begin');return;}
     showStatus('원본 영상을 저장소에 올리는 중입니다. 0%');
     const blob=await upload(`uploads/${Date.now()}-${file.name}`,file,{access:'public',handleUploadUrl:'/api/upload',multipart:true,onUploadProgress:({percentage})=>showStatus(`원본 업로드 중 · ${Math.round(percentage)}%`)});
-    showStatus('대사와 화자를 분석 중입니다.');
+    showStatus(taskMode==='edit'?'영상 편집을 위해 대사와 화자를 분석 중입니다.':'대사와 화자를 분석 중입니다.');
     const started=await apiJson('/api/create',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({sourceUrl:blob.url})});
-    const transcriptJob=await waitForJob(started.jobId,'대사 추출');
+    const transcriptJob=await waitForJob(started.jobId,taskMode==='edit'?'편집용 대사 분석':'대사 추출');
     if(taskMode==='transcript'){
       await showTranscript(transcriptJob.transcriptId);showStatus('대사 TXT 추출이 완료됐습니다. 파일을 다운로드할 수 있어요.');
       $('#transcriptSection').scrollIntoView({behavior:'smooth',block:'start'});return;
