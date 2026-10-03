@@ -11,16 +11,23 @@
       <header>
         <p class="eyebrow">AI VIDEO EDITOR</p>
         <h1>긴 영상에서<br /><em>필요한 장면만</em> 골라요.</h1>
-        <p class="intro">먼저 전체 대사를 만들고 확인한 다음, 원하는 타임라인과 자막으로 영상을 편집하세요.</p>
+        <p class="intro">대사 TXT만 추출하거나, 편집 요구사항을 입력해 완성 영상까지 만들 수 있어요.</p>
       </header>
 
       <section class="editor" aria-label="영상 전사 및 편집">
-        <h2>1단계 · 영상 대사 만들기</h2>
-        <div class="source-tabs" role="tablist">
-          <button class="tab active" id="youtubeTab" type="button">YouTube 채널</button>
-          <button class="tab" id="uploadTab" type="button">MP4 업로드</button>
+        <h2>원하는 기능을 선택하세요</h2>
+        <div class="task-tabs" role="tablist" aria-label="작업 선택">
+          <button class="task-tab active" id="transcriptMode" type="button" role="tab" aria-selected="true">대사 TXT 추출</button>
+          <button class="task-tab" id="editMode" type="button" role="tab" aria-selected="false">AI 영상 편집</button>
         </div>
-        <div id="youtubePanel" class="source-panel">
+        <p id="modeDescription" class="hint">영상의 대사와 화자·시간 정보를 TXT 파일로 추출합니다.</p>
+
+        <h2 class="source-heading">원본 MP4 선택</h2>
+        <div class="source-tabs" role="tablist">
+          <button class="tab" id="youtubeTab" type="button">YouTube 계정</button>
+          <button class="tab active" id="uploadTab" type="button">MP4 업로드</button>
+        </div>
+        <div id="youtubePanel" class="source-panel hidden">
           <div id="youtubeConnect">
             <p class="hint">YouTube 채널을 연결하면 내 영상과 자막 권한을 확인할 수 있습니다. 편집할 원본 MP4는 업로드해주세요.</p>
             <a class="connect" href="/api/youtube-auth?action=begin">YouTube 채널 연결</a>
@@ -30,23 +37,15 @@
             <p id="captionStatus" class="hint"></p>
           </div>
         </div>
-        <div id="uploadPanel" class="source-panel hidden">
+        <div id="uploadPanel" class="source-panel">
           <label class="dropzone" for="videoFile">
             <input id="videoFile" type="file" accept="video/mp4,.mp4" />
             <span class="plus">+</span><strong>MP4 파일 선택</strong>
             <small id="fileName">MP4 원본을 선택하세요.</small>
           </label>
         </div>
-        <button id="transcribeButton" class="run full" type="button">대사 전사 시작 →</button>
 
-        <section id="transcriptSection" class="transcript hidden">
-          <h2>전사 완료</h2>
-          <p id="transcriptMeta" class="hint"></p>
-          <a id="transcriptDownload" class="connect" href="#" download>대사 TXT 다운로드</a>
-          <details><summary>대사 미리보기</summary><pre id="transcriptPreview"></pre></details>
-
-          <hr />
-          <h2>2단계 · 편집 요구사항 작성</h2>
+        <section id="editOptions" class="hidden" aria-label="영상 편집 요구사항">
           <label for="instruction">원하는 영상 설명</label>
           <textarea id="instruction" rows="3" placeholder="예: 창업자가 제품의 핵심 가치를 설명하는 대목을 중심으로, 반복이나 말실수는 빼고 자연스럽게 편집해줘."></textarea>
           <label for="timeline">원하는 타임라인 (선택)</label>
@@ -56,7 +55,15 @@
             <div><label for="aspectRatio">화면 비율</label><select id="aspectRatio"><option value="16:9">가로 16:9</option><option value="9:16">세로 9:16</option></select></div>
           </div>
           <label class="check"><input id="subtitles" type="checkbox" checked /> 한글 자막을 영상에 넣기</label>
-          <button id="editButton" class="run full" type="button">요구사항으로 영상 편집 →</button>
+        </section>
+
+        <button id="transcribeButton" class="run full" type="button">대사 TXT 추출 시작 →</button>
+
+        <section id="transcriptSection" class="transcript hidden">
+          <h2>대사 TXT 추출 완료</h2>
+          <p id="transcriptMeta" class="hint"></p>
+          <a id="transcriptDownload" class="connect" href="#" download>대사 TXT 다운로드</a>
+          <details><summary>대사 미리보기</summary><pre id="transcriptPreview"></pre></details>
         </section>
       </section>
 

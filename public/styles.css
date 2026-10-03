@@ -12,6 +12,10 @@ h1 em { font-style:normal; color:#678000; }
 .source-tabs { display:flex; gap:7px; border-bottom:1px solid var(--line); padding-bottom:18px; margin-bottom:24px; }
 .tab { border:0; background:#f1f0eb; border-radius:100px; padding:10px 16px; cursor:pointer; font:600 13px Manrope; }
 .tab.active { background:var(--ink); color:white; }
+.task-tabs { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:18px 0 10px; }
+.task-tab { min-height:58px; border:1px solid var(--line); border-radius:12px; background:#f6f5f0; padding:12px; cursor:pointer; font:700 14px Manrope; }
+.task-tab.active { border-color:var(--ink); background:var(--ink); color:white; }
+.source-heading { margin-top:30px!important; }
 label { display:block; font-size:13px; font-weight:700; margin:19px 0 9px; }
 input, textarea { width:100%; font:14px Manrope; color:var(--ink); border:1px solid var(--line); border-radius:9px; padding:13px; background:#fff; outline-color:#9abc00; }
 select { width:100%; font:14px Manrope; color:var(--ink); border:1px solid var(--line); border-radius:9px; padding:13px; background:#fff; }
