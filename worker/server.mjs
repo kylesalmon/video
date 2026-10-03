@@ -21,13 +21,13 @@ const toAssTime=seconds=>{const centis=Math.floor(Math.max(0,seconds)*100)%100;c
 const safeAss=text=>String(text||'').replace(/[{}]/g,'').replace(/\\/g,'\\\\').replace(/\r?\n/g,'\\N');
 const prettySpeaker=id=>/^speaker-(\d+)$/.test(String(id||''))?`화자 ${id.match(/\d+/)[0]}`:'화자 미상';
 const mergeSpeakerSegments=segments=>segments.sort((a,b)=>a.start-b.start).reduce((merged,segment)=>{const previous=merged.at(-1);if(previous&&previous.speaker===segment.speaker&&segment.start-previous.end<=1.1&&segment.end-previous.start<=25){previous.text=`${previous.text.trimEnd()} ${String(segment.text||'').trimStart()}`.trim();previous.end=segment.end;}else merged.push({...segment,text:String(segment.text||'').trim()});return merged;},[]);
-const parseClock=value=>{const match=String(value||'').trim().match(/^(\d{1,3}):(\d{2}):(\d{2})(?:[.,](\d+))?$/);return match?Number(match[1])*3600+Number(match[2])*60+Number(match[3])+Number(`0.${match[4]||0}`):NaN;};
+const parseClock=value=>{const match=String(value||'').trim().match(/^(\d{1,3}):(\d{2}):(\d{2})(?:[.,](\d*))?$/);return match?Number(match[1])*3600+Number(match[2])*60+Number(match[3])+Number(`0.${match[4]||0}`):NaN;};
 function parseTranscriptText(text,sourceUrl,id){
   if(typeof text!=='string'||text.length>4_000_000)throw new Error('TXT 파일이 너무 크거나 올바르지 않습니다.');
   const durationMatch=text.match(/^영상 길이\s*:\s*(\d{1,3}:\d{2}:\d{2}(?:[.,]\d+)?)/m),declaredDuration=durationMatch?parseClock(durationMatch[1]):NaN;
   const segments=[];
   for(const line of text.split(/\r?\n/)){
-    const match=line.match(/^\[(\d{1,3}:\d{2}:\d{2}(?:[.,]\d+)?)(?:\s*[-–]\s*(\d{1,3}:\d{2}:\d{2}(?:[.,]\d+)?))?\]\s*(?:화자\s*(\d+)|speaker[- ]?(\d+)|([^:]{1,40})):\s*(.+)$/i);
+    const match=line.match(/^\[(\d{1,3}:\d{2}:\d{2}(?:[.,]\d*)?)(?:\s*[-–]\s*(\d{1,3}:\d{2}:\d{2}(?:[.,]\d*)?))?\]\s*(?:화자\s*(\d+)|speaker[- ]?(\d+)|([^:]{1,40})):\s*(.+)$/i);
     if(!match)continue;
     const start=parseClock(match[1]),explicitEnd=match[2]?parseClock(match[2]):NaN,text=match[6].trim();if(!Number.isFinite(start)||!text)continue;
     const speakerNumber=match[3]||match[4];const speaker=speakerNumber?`speaker-${speakerNumber}`:match[5].trim();
