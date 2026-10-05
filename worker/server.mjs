@@ -4,7 +4,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { finished } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHmac, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { selectClips } from './selectClips.mjs';
 
@@ -17,6 +17,7 @@ const body=req=>new Promise((resolve,reject)=>{const chunks=[];req.on('data',c=>
 const status=(id,message)=>jobs.set(id,{status:'processing',message});
 const remoteInput=['-reconnect','1','-reconnect_on_network_error','1','-reconnect_delay_max','5'];
 const auth=req=>req.headers.authorization===`Bearer ${process.env.WORKER_API_SECRET}`;
+const signedResult=(url,id)=>{const exp=Number(url.searchParams.get('exp')),sig=url.searchParams.get('sig')||'';if(!Number.isFinite(exp)||exp*1000<Date.now())return false;const expected=createHmac('sha256',process.env.WORKER_API_SECRET||'').update(`${id}.${exp}`).digest('hex');return sig.length===expected.length&&timingSafeEqual(Buffer.from(sig),Buffer.from(expected));};
 const writeStream=async(url,file)=>{const response=await fetch(url);if(!response.ok||!response.body)throw new Error(`원본 다운로드 실패 (${response.status})`);await finished(Readable.fromWeb(response.body).pipe(createWriteStream(file)));};
 const toAssTime=seconds=>{const centis=Math.floor(Math.max(0,seconds)*100)%100;const total=Math.floor(Math.max(0,seconds));return `${Math.floor(total/3600)}:${String(Math.floor(total%3600/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}.${String(centis).padStart(2,'0')}`;};
 const safeAss=text=>String(text||'').replace(/[{}]/g,'').replace(/\\/g,'\\\\').replace(/\r?\n/g,'\\N');
@@ -124,12 +125,12 @@ async function editVideo(id,payload){
 const server=http.createServer(async(req,res)=>{
   const url=new URL(req.url,'http://localhost');
   if(req.method==='GET'&&url.pathname==='/health')return json(res,200,{ok:true});
+  if(req.method==='GET'&&url.pathname.startsWith('/results/')){const id=path.basename(url.pathname);if(!auth(req)&&!signedResult(url,id))return json(res,401,{error:'Unauthorized'});const output=results.get(id);if(!output)return json(res,404,{error:'Result not found'});res.writeHead(200,{'content-type':'video/mp4','content-disposition':'attachment; filename="edited-video.mp4"'});return createReadStream(output).pipe(res);}
   if(!auth(req))return json(res,401,{error:'Unauthorized'});
   if(req.method==='GET'&&url.pathname.startsWith('/jobs/'))return json(res,jobs.has(url.pathname.slice(6))?200:404,jobs.get(url.pathname.slice(6))||{error:'Job not found'});
   if(req.method==='GET'&&url.pathname.startsWith('/transcripts/')){
     const id=path.basename(url.pathname).replace(/\.txt$/,'');try{const transcript=JSON.parse(await readFile(path.join(temp,`${id}.json`),'utf8'));if(url.pathname.endsWith('.txt')){const dialogue=transcript.segments.map(s=>`[${toAssTime(s.start).slice(0,8)}-${toAssTime(s.end).slice(0,8)}] ${prettySpeaker(s.speaker)}: ${s.text}`).join('\n');res.writeHead(200,{'content-type':'text/plain; charset=utf-8','content-disposition':`attachment; filename="transcript-${id}.txt"`});return res.end(`영상 길이: ${toAssTime(transcript.duration).slice(0,8)}\n감지 화자 수: ${transcript.speakerCount||0}\n\n대사 (화자별 발화 단위, 시작-종료 시각)\n${dialogue}`);}return json(res,200,{id,duration:transcript.duration,segments:transcript.segments,speakerCount:transcript.speakerCount||0});}catch{return json(res,404,{error:'Transcript not found'});}
   }
-  if(req.method==='GET'&&url.pathname.startsWith('/results/')){const id=path.basename(url.pathname);const output=results.get(id);if(!output)return json(res,404,{error:'Result not found'});res.writeHead(200,{'content-type':'video/mp4','content-disposition':'attachment; filename="edited-video.mp4"'});return createReadStream(output).pipe(res);}
   if(req.method!=='POST')return json(res,404,{error:'Not found'});
   try{
     const payload=await body(req);
