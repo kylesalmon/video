@@ -1,6 +1,15 @@
 const MODEL = process.env.EDIT_MODEL || 'gpt-5';
 const MAX_CLIPS = 60;
-const MIN_CLIP = 4;
+const REASONING_EFFORT = process.env.EDIT_REASONING_EFFORT || 'medium';
+const MAX_WAIT_MS = 15 * 60 * 1000;
+const BUDGET_TOLERANCE = 1.1;
+
+// Named so it is never confused with fetch's own abort error, which is also called TimeoutError.
+class EditTimeout extends Error {
+  name = 'EditTimeout';
+}
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const hhmmss = (seconds) => {
   const value = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -41,7 +50,7 @@ const schema = {
   },
 };
 
-function buildPrompt({ transcript, payload, duration, retryNote }) {
+function buildPrompt({ transcript, payload, duration }) {
   const rules = [
     `목표 길이 ${duration}초에 맞게 필수(priority 1) 구간을 고르세요. 필수 구간 합은 목표를 넘지 않아야 합니다.`,
     `선택(priority 2) 구간은 추가 후보로 제안하고, 목표 길이 조절 시 먼저 제외합니다.`,
@@ -61,7 +70,6 @@ function buildPrompt({ transcript, payload, duration, retryNote }) {
     '',
     '## 선택 규칙',
     rules.map((rule) => `- ${rule}`).join('\n'),
-    retryNote ? `\n## 재시도 사유\n${retryNote}\n거부된 내용을 수정하고 다시 선택하세요.` : '',
     '',
     `## 시간표시가 있는 전사 (영상 길이 ${hhmmss(transcript.duration)}, 발화 ${transcript.segments.length}개)`,
     renderTranscript(transcript.segments),
@@ -71,33 +79,97 @@ function buildPrompt({ transcript, payload, duration, retryNote }) {
   ].join('\n');
 }
 
-async function askModel(prompt) {
-  const response = await fetch('https://api.openai.com/v1/responses', {
+const retryPrompt = (note) => `## 재시도 사유\n${note}\n거부된 구간을 고쳐서 전체 구간 목록을 다시 반환하세요. 규칙과 전사는 처음과 같습니다.`;
+
+const retryable = (message) => Object.assign(new Error(message), { retryable: true });
+
+const openai = async (pathname, { timeoutMs = 30000, ...init } = {}) => {
+  let response;
+  let data;
+  try {
+    response = await fetch(`https://api.openai.com/v1/responses${pathname}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        'content-type': 'application/json',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    data = await response.json().catch(() => ({}));
+  } catch (error) {
+    // A dropped connection or a slow reply is worth retrying, so it must not fail the whole job.
+    const reason = error.name === 'TimeoutError' ? `${Math.round(timeoutMs / 1000)}초 안에 응답이 없었습니다` : error.message;
+    throw retryable(`OpenAI 연결이 끊겼습니다 (${reason}).`);
+  }
+  if (!response.ok && (response.status === 429 || response.status === 408 || response.status >= 500)) {
+    throw retryable(`OpenAI 일시 오류 (${response.status}) ${data.error?.message || ''}`.trim());
+  }
+  // A rejected request fails the same way every time, so the caller must not resend the prompt.
+  if (!response.ok) throw Object.assign(new Error(`OpenAI 구간 선택: ${data.error?.message || response.status}`), { apiError: true });
+  return data;
+};
+
+async function askModel({ input, previousResponseId, effort }, onWait) {
+  // Background mode keeps long reasoning runs off a single HTTP request, so no connection timeout applies.
+  const create = () => openai('', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      'content-type': 'application/json',
-    },
+    // Sending a long transcript takes a while, so this is more generous than a status poll.
+    timeoutMs: 120000,
     body: JSON.stringify({
       model: MODEL,
-      input: prompt,
+      input,
+      ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
       text: { format: schema },
-      max_output_tokens: 16000,
+      reasoning: { effort },
+      max_output_tokens: 32000,
+      background: true,
     }),
-    signal: AbortSignal.timeout(180000),
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(`OpenAI 구간 선택: ${data.error?.message || response.status}`);
+  let data;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      data = await create();
+      break;
+    } catch (error) {
+      if (!error.retryable || attempt >= 3) throw error;
+      await delay(2000 * attempt);
+    }
+  }
+  const startedAt = Date.now();
+  while (data.status === 'queued' || data.status === 'in_progress') {
+    if (Date.now() - startedAt > MAX_WAIT_MS) {
+      await openai(`/${data.id}/cancel`, { method: 'POST', timeoutMs: 10000 }).catch(() => {});
+      throw new EditTimeout(`AI 구간 선택이 ${Math.round(MAX_WAIT_MS / 60000)}분 안에 끝나지 않았습니다. 요구사항을 좁히거나 다시 시도해주세요.`);
+    }
+    await delay(3000);
+    onWait?.(Math.round((Date.now() - startedAt) / 1000));
+    try {
+      data = await openai(`/${data.id}`);
+    } catch (error) {
+      // The run keeps going on OpenAI's side, so a failed poll just means checking again.
+      if (!error.retryable) throw error;
+    }
+  }
+  if (data.status === 'failed' || data.status === 'cancelled') {
+    throw new Error(`OpenAI 구간 선택: ${data.error?.message || data.status}`);
+  }
   if (data.status === 'incomplete') {
-    throw new Error(`AI 응답이 잘렸습니다 (${data.incomplete_details?.reason || 'unknown'}).`);
+    throw Object.assign(new Error(`AI 응답이 잘렸습니다 (${data.incomplete_details?.reason || 'unknown'}).`), { incomplete: true });
   }
   const text = data.output_text || data.output?.flatMap((item) => item.content || []).find((item) => item.type === 'output_text')?.text;
   if (!text) throw new Error('AI가 편집 구간을 반환하지 않았습니다.');
-  return JSON.parse(text);
+  return { plan: JSON.parse(text), responseId: data.id };
 }
 
-function resolve(plan, transcript) {
-  const byId = new Map(transcript.segments.map((segment) => [segment.id, segment]));
+// Ends a clip just after an utterance, but never past the start of the next one.
+function utteranceEnd(byId, transcript, id) {
+  const segment = byId.get(id);
+  const next = byId.get(id + 1);
+  const limit = next ? Math.max(Number(segment.end), Number(next.start)) : Number(transcript.duration);
+  return Math.min(Number(segment.end) + 0.6, limit, Number(transcript.duration));
+}
+
+function resolve(plan, transcript, byId) {
   const clips = [];
   const rejected = [];
 
@@ -120,7 +192,7 @@ function resolve(plan, transcript) {
       continue;
     }
     const start = Math.max(0, Number(startSegment.start) - 0.4);
-    const end = Math.min(Number(transcript.duration), Number(endSegment.end) + 0.6);
+    const end = utteranceEnd(byId, transcript, raw.endId);
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
       rejected.push(`#${raw.startId}~#${raw.endId}: 유효하지 않은 시간 범위`);
       continue;
@@ -149,7 +221,7 @@ function resolve(plan, transcript) {
   return { clips: merged, rejected };
 }
 
-function fitBudget(clips, duration) {
+function fitBudget(clips, duration, transcript, byId) {
   const total = (items) => items.reduce((sum, clip) => sum + clip.end - clip.start, 0);
   let kept = [...clips];
   if (total(kept) <= duration) return kept;
@@ -159,40 +231,53 @@ function fitBudget(clips, duration) {
     if (total(kept) <= duration) break;
     kept = kept.filter((clip) => clip !== drop);
   }
-  if (total(kept) <= duration) return kept;
 
-  const minimumTotal = kept.length * MIN_CLIP;
-  if (minimumTotal > duration) {
-    throw new Error(`필수 장면 ${kept.length}개를 ${duration}초에 담을 수 없습니다. 목표 길이를 ${Math.ceil(minimumTotal)}초 이상으로 올리거나 요구사항을 좁혀주세요.`);
+  // Shorten the longest clip by whole utterances from its tail so no sentence is cut mid-word.
+  while (total(kept) > duration) {
+    const longest = kept
+      .filter((clip) => clip.endId > clip.startId)
+      .reduce((best, clip) => (!best || clip.end - clip.start > best.end - best.start ? clip : best), null);
+    if (!longest) break;
+    longest.endId -= 1;
+    longest.end = Math.max(longest.start + 0.5, utteranceEnd(byId, transcript, longest.endId));
   }
-  const originalTotal = total(kept);
-  const factor = (duration - minimumTotal) / (originalTotal - minimumTotal);
-  for (const clip of kept) {
-    const originalLength = clip.end - clip.start;
-    clip.end = clip.start + MIN_CLIP + (originalLength - MIN_CLIP) * factor;
+  if (total(kept) > duration * BUDGET_TOLERANCE) {
+    throw new Error(`필수 장면 ${kept.length}개를 발화 단위로 줄여도 ${Math.ceil(total(kept))}초입니다. 목표 길이를 올리거나 요구사항을 좁혀주세요.`);
   }
   return kept;
 }
 
-export async function selectClips({ transcript, payload, duration }) {
+export async function selectClips({ transcript, payload, duration, onStatus }) {
   if (!transcript.segments?.length) throw new Error('전사에서 편집할 발화를 찾지 못했습니다.');
+  const byId = new Map(transcript.segments.map((segment) => [segment.id, segment]));
+  const prompt = buildPrompt({ transcript, payload, duration });
+  let previousResponseId = null;
   let retryNote = '';
+  let effort = REASONING_EFFORT;
   for (let attempt = 1; attempt <= 3; attempt++) {
-    let plan;
+    let result;
     try {
-      plan = await askModel(buildPrompt({ transcript, payload, duration, retryNote }));
+      const label = attempt > 1 ? ` (재시도 ${attempt - 1}/2)` : '';
+      // Retries continue the stored conversation, so the full transcript is not sent again.
+      result = await askModel(
+        { input: previousResponseId ? retryPrompt(retryNote) : prompt, previousResponseId, effort },
+        (seconds) => onStatus?.(`AI가 편집 구간을 고르는 중입니다${label} · ${seconds}초 경과`),
+      );
     } catch (error) {
-      retryNote = error.message;
-      if (attempt === 3) throw error;
+      // Re-sending the same prompt after the whole budget ran out would only repeat the wait.
+      if (attempt === 3 || error.name === 'EditTimeout' || error.apiError) throw error;
+      // Truncation means reasoning used up the output budget, so try again with lighter reasoning.
+      if (error.incomplete) effort = 'low';
       continue;
     }
 
-    const { clips, rejected } = resolve(plan, transcript);
+    const { clips, rejected } = resolve(result.plan, transcript, byId);
     if (clips.length && rejected.length <= clips.length) {
-      const fitted = fitBudget(clips, duration);
+      const fitted = fitBudget(clips, duration, transcript, byId);
       if (fitted.length) return fitted.slice(0, MAX_CLIPS);
     }
     retryNote = rejected.slice(0, 10).join('\n') || '유효한 구간을 선택하지 않았습니다.';
+    previousResponseId = result.responseId;
     if (attempt === 3) throw new Error(`AI가 유효한 편집 구간을 고르지 못했습니다. ${retryNote}`);
   }
   throw new Error('AI가 편집 구간을 결정하지 못했습니다.');

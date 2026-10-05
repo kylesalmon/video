@@ -15,6 +15,7 @@ const run=args=>new Promise((resolve,reject)=>{const p=spawn('ffmpeg',['-hide_ba
 const probeDuration=file=>new Promise((resolve,reject)=>{const p=spawn('ffprobe',['-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',file]);let out='',err='';p.stdout.on('data',d=>out+=d);p.stderr.on('data',d=>err+=d);p.on('error',reject);p.on('close',c=>{const duration=Number(out.trim());c===0&&Number.isFinite(duration)?resolve(duration):reject(new Error(err||'영상 길이를 확인하지 못했습니다.'));});});
 const body=req=>new Promise((resolve,reject)=>{const chunks=[];req.on('data',c=>chunks.push(c));req.on('end',()=>{try{resolve(JSON.parse(Buffer.concat(chunks)))}catch(e){reject(e)}});req.on('error',reject);});
 const status=(id,message)=>jobs.set(id,{status:'processing',message});
+const remoteInput=['-reconnect','1','-reconnect_on_network_error','1','-reconnect_delay_max','5'];
 const auth=req=>req.headers.authorization===`Bearer ${process.env.WORKER_API_SECRET}`;
 const writeStream=async(url,file)=>{const response=await fetch(url);if(!response.ok||!response.body)throw new Error(`원본 다운로드 실패 (${response.status})`);await finished(Readable.fromWeb(response.body).pipe(createWriteStream(file)));};
 const toAssTime=seconds=>{const centis=Math.floor(Math.max(0,seconds)*100)%100;const total=Math.floor(Math.max(0,seconds));return `${Math.floor(total/3600)}:${String(Math.floor(total%3600/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}.${String(centis).padStart(2,'0')}`;};
@@ -93,8 +94,9 @@ async function editVideo(id,payload){
   const input=path.join(temp,`${id}.mp4`),output=path.join(temp,`${id}-edited.mp4`),listPath=path.join(temp,`${id}-clips.txt`),clipPaths=[];
   try{
     status(id,'AI가 실제 발화 ID를 기준으로 편집 구간을 고르는 중입니다.');
-    const clips=await selectClips({transcript,payload,duration});
-    status(id,'선택된 편집 구간의 원본 영상을 불러오는 중입니다.');await writeStream(transcript.sourceUrl,input);
+    const clips=await selectClips({transcript,payload,duration,onStatus:message=>status(id,message)});
+    // Seek inside the remote MP4 with range requests so only the selected parts are fetched.
+    let source=transcript.sourceUrl;
     const portrait=payload.aspectRatio==='9:16',width=portrait?720:1280,height=portrait?1280:720;
     for(let index=0;index<clips.length;index++){
       const clip=clips[index],clipPath=path.join(temp,`${id}-part-${String(index).padStart(3,'0')}.mp4`),assPath=path.join(temp,`${id}-part-${String(index).padStart(3,'0')}.ass`);clipPaths.push(clipPath);
@@ -106,7 +108,8 @@ async function editVideo(id,payload){
         await writeFile(assPath,ass);videoFilter+=`,subtitles=${assPath}`;
       }
       status(id,`선택 구간 렌더링 중입니다. (${index+1}/${clips.length})`);
-      await run(['-y','-ss',clip.start.toFixed(3),'-i',input,'-t',(clip.end-clip.start).toFixed(3),'-map','0:v:0','-map','0:a:0?','-vf',videoFilter,'-c:v','libx264','-preset','ultrafast','-crf','24','-c:a','aac','-b:a','128k',clipPath]);
+      const render=()=>run(['-y',...(source===input?[]:remoteInput),'-ss',clip.start.toFixed(3),'-i',source,'-t',(clip.end-clip.start).toFixed(3),'-map','0:v:0','-map','0:a:0?','-vf',videoFilter,'-c:v','libx264','-preset','ultrafast','-crf','24','-c:a','aac','-b:a','128k',clipPath]);
+      try{await render();}catch(error){if(source===input)throw error;console.warn('Remote seek failed, downloading source:',error.message);status(id,'원본 영상을 내려받는 중입니다.');await writeStream(transcript.sourceUrl,input);source=input;await render();}
       await rm(assPath,{force:true});
     }
     await writeFile(listPath,clipPaths.map(file=>`file '${file}'`).join('\n')+'\n');
